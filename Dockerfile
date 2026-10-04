@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # syntax = docker/dockerfile:1
 
 # Adjust NODE_VERSION as desired
@@ -37,3 +38,19 @@ COPY --from=build /app /app
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
 CMD [ "npm", "run", "start" ]
+=======
+# node:sqlite needs Node >=22.13 without a flag; 24 matches package.json's engines field.
+FROM node:24-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+ENV NODE_ENV=production
+EXPOSE 8080
+
+CMD ["node", "server.js"]
+>>>>>>> e0f02a9 (Update SSH monitor)

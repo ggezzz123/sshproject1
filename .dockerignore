@@ -1,4 +1,18 @@
+<<<<<<< HEAD
 .env
 node_modules/
 data/
 *.log
+=======
+node_modules
+data
+.env
+.env.example
+*.log
+.git
+.gitignore
+README.md
+render.yaml
+netlify.toml
+tools
+>>>>>>> e0f02a9 (Update SSH monitor)
