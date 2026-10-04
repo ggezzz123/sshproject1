@@ -64,4 +64,29 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { apiKeyAuth, jwtAuth, requireAdmin, signToken, generateApiKey, VALID_API_KEYS };
+// Admins see everything; regular users only see rows belonging to their own servers.
+// `col` is the (aliased) server_id column of the table being queried.
+function serverScope(req, col) {
+  if (req.user.role === "admin") return { clauses: [], params: [] };
+  return {
+    clauses: [`${col} IN (SELECT id FROM servers WHERE user_id = ?)`],
+    params: [req.user.id],
+  };
+}
+
+function canAccessServerId(req, serverId) {
+  if (req.user.role === "admin") return true;
+  const row = db.prepare("SELECT user_id FROM servers WHERE id = ?").get(serverId);
+  return !!row && row.user_id === req.user.id;
+}
+
+module.exports = {
+  apiKeyAuth,
+  jwtAuth,
+  requireAdmin,
+  signToken,
+  generateApiKey,
+  serverScope,
+  canAccessServerId,
+  VALID_API_KEYS,
+};

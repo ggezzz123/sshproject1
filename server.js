@@ -6,6 +6,12 @@ const bcrypt = require("bcryptjs");
 const db = require("./db");
 
 const app = express();
+// Behind Render's proxy req.ip would otherwise be the proxy's address. Only enable when a
+// proxy really sits in front, or clients could spoof their IP via X-Forwarded-For.
+if (process.env.TRUST_PROXY) {
+  const v = process.env.TRUST_PROXY;
+  app.set("trust proxy", /^\d+$/.test(v) ? Number(v) : v === "true" ? true : v);
+}
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
@@ -36,6 +42,19 @@ app.use("/api", require("./routes/dashboardRoutes"));
 // Public self-service key page
 app.get("/get-key", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "get-key.html"));
+});
+
+// Dashboard app (landing page is public/index.html at "/")
+app.get("/app", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "app.html"));
+});
+
+// Agent installer + agent script, fetched by `curl .../install.sh | sudo bash`
+app.get("/install.sh", (req, res) => {
+  res.type("text/x-shellscript").sendFile(path.join(__dirname, "agent", "install.sh"));
+});
+app.get("/agent/agentssh_v2.py", (req, res) => {
+  res.type("text/x-python").sendFile(path.join(__dirname, "agent", "agentssh_v2.py"));
 });
 
 // Static frontend

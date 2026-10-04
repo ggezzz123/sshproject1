@@ -16,3 +16,13 @@ services:
         sync: false
       - key: VALID_API_KEYS
         sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALERT_MIN_RISK
+        value: HIGH
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_TO
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false

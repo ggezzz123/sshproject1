@@ -2,6 +2,11 @@
   publish = "public"
 
 [[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
+[[redirects]]
   from = "/get-key"
   to = "/get-key.html"
   status = 200

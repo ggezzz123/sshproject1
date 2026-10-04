@@ -1,13 +1,21 @@
 const express = require("express");
 const db = require("../db");
 const { apiKeyAuth } = require("../middleware/auth");
-const { calculateRisk, maxRisk } = require("../detectionEngine");
+const { analyzeBatch } = require("../analysisEngine");
 
 const router = express.Router();
 
-const FAILED_TYPES = new Set(["ssh_login_failed", "ssh_invalid_user"]);
-const SUCCESS_TYPES = new Set(["ssh_login_success"]);
-const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+// Timestamps without a zone (older agents send "YYYY-MM-DD HH:MM:SS" in the server's local time)
+// are interpreted with this offset.
+const LOG_TZ_OFFSET = process.env.LOG_TZ_OFFSET || "+07:00";
+
+function normalizeTimestamp(ts) {
+  if (!ts) return new Date().toISOString();
+  let s = String(ts).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) s = s.replace(" ", "T") + LOG_TZ_OFFSET;
+  const d = new Date(s);
+  return isNaN(d) ? new Date().toISOString() : d.toISOString();
+}
 
 function findOrCreateServer(hostname, apiKey, ip) {
   let server = db
@@ -28,52 +36,6 @@ function findOrCreateServer(hostname, apiKey, ip) {
   return server;
 }
 
-function countFailed(serverId, ip) {
-  const since = new Date(Date.now() - WINDOW_MS).toISOString();
-  const row = db
-    .prepare(
-      "SELECT COUNT(*) AS c FROM ssh_logs WHERE server_id = ? AND source_ip = ? AND event_type IN ('ssh_login_failed','ssh_invalid_user') AND event_time >= ?"
-    )
-    .get(serverId, ip, since);
-  return row.c;
-}
-
-function upsertIncident(serverId, ip, risk, failedAttempts, description) {
-  const existing = db
-    .prepare(
-      "SELECT * FROM incidents WHERE server_id = ? AND source_ip = ? AND status = 'OPEN' ORDER BY id DESC LIMIT 1"
-    )
-    .get(serverId, ip);
-
-  if (existing) {
-    const newRisk = maxRisk(existing.risk_level, risk);
-    db.prepare(
-      "UPDATE incidents SET risk_level = ?, failed_attempts = ?, description = ? WHERE id = ?"
-    ).run(newRisk, failedAttempts, description, existing.id);
-  } else {
-    db.prepare(
-      "INSERT INTO incidents (server_id, source_ip, risk_level, failed_attempts, description, detected_at, status) VALUES (?, ?, ?, ?, ?, datetime('now'), 'OPEN')"
-    ).run(serverId, ip, risk, failedAttempts, description);
-  }
-}
-
-function processDetection(serverId, log) {
-  const ip = log.ip_address || log.source_ip;
-  if (!ip) return;
-  const type = log.event_type;
-
-  if (FAILED_TYPES.has(type)) {
-    const failed = countFailed(serverId, ip);
-    const risk = calculateRisk(failed, false);
-    upsertIncident(serverId, ip, risk, failed, `Failed login attempts from ${ip}`);
-  } else if (SUCCESS_TYPES.has(type)) {
-    const failed = countFailed(serverId, ip);
-    if (failed >= 5) {
-      upsertIncident(serverId, ip, "CRITICAL", failed, `Brute force followed by successful login from ${ip}`);
-    }
-  }
-}
-
 function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
   const hostname = payload.hostname || "unknown";
   const logs = Array.isArray(payload.logs) ? payload.logs : [];
@@ -91,18 +53,23 @@ function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
     "INSERT INTO ssh_logs (server_id, event_time, source_ip, username, event_type, severity, message) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
 
-db.exec("BEGIN");
+  const normalized = logs.map((log) => {
+    const event_time = normalizeTimestamp(log.timestamp);
+    return {
+      event_time,
+      t: new Date(event_time).getTime(),
+      ip: log.ip_address || log.source_ip || null,
+      user: log.username || null,
+      type: log.event_type || "unknown",
+      severity: log.severity || "info",
+      message: log.message || null,
+    };
+  });
+
+  db.exec("BEGIN");
   try {
-    for (const log of logs) {
-      insert.run(
-        server.id,
-        log.timestamp || new Date().toISOString(),
-        log.ip_address || log.source_ip || null,
-        log.username || null,
-        log.event_type || "unknown",
-        log.severity || "info",
-        log.message || null
-      );
+    for (const l of normalized) {
+      insert.run(server.id, l.event_time, l.ip, l.user, l.type, l.severity, l.message);
     }
     db.exec("COMMIT");
   } catch (e) {
@@ -110,8 +77,10 @@ db.exec("BEGIN");
     throw e;
   }
 
-  for (const log of logs) {
-    processDetection(server.id, log);
+  try {
+    analyzeBatch(server.id, normalized);
+  } catch (e) {
+    console.error("[analysis]", e);
   }
 
   return { server, received: logs.length };

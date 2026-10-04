@@ -57,10 +57,26 @@ CREATE INDEX IF NOT EXISTS idx_logs_ip ON ssh_logs(source_ip);
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 `);
 
-// Migrate databases created before the servers.user_id column existed
-const serverColumns = db.prepare("PRAGMA table_info(servers)").all().map((c) => c.name);
-if (!serverColumns.includes("user_id")) {
-  db.exec("ALTER TABLE servers ADD COLUMN user_id INTEGER REFERENCES users(id)");
+// Migrate databases created before newer columns existed
+function addColumns(table, defs) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  for (const [name, type] of Object.entries(defs)) {
+    if (!existing.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
 }
+addColumns("servers", { user_id: "INTEGER REFERENCES users(id)" });
+addColumns("incidents", {
+  attack_type: "VARCHAR(50) DEFAULT 'brute_force'",
+  incident_key: "VARCHAR(255)",
+  username: "VARCHAR(100)",
+  last_seen: "DATETIME",
+  evidence: "TEXT",
+  alerted_risk: "VARCHAR(20)",
+});
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_logs_server_time ON ssh_logs(server_id, event_time);
+CREATE INDEX IF NOT EXISTS idx_logs_user ON ssh_logs(username);
+CREATE INDEX IF NOT EXISTS idx_incidents_key ON incidents(server_id, attack_type, incident_key, status);
+`);
 
 module.exports = db;

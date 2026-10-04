@@ -1,15 +1,15 @@
 const express = require("express");
 const db = require("../db");
-const { jwtAuth, requireAdmin } = require("../middleware/auth");
+const { jwtAuth, serverScope, canAccessServerId } = require("../middleware/auth");
 
 const router = express.Router();
 router.use(jwtAuth);
-router.use(requireAdmin);
 
 router.get("/logs", (req, res) => {
   const { limit = 200, offset = 0, event_type, server_id, source_ip } = req.query;
-  const clauses = [];
-  const params = [];
+  const sc = serverScope(req, "l.server_id");
+  const clauses = [...sc.clauses];
+  const params = [...sc.params];
   if (event_type) {
     clauses.push("l.event_type = ?");
     params.push(event_type);
@@ -38,7 +38,9 @@ router.get("/logs", (req, res) => {
 
 router.get("/logs/:id", (req, res) => {
   const log = db.prepare("SELECT * FROM ssh_logs WHERE id = ?").get(req.params.id);
-  if (!log) return res.status(404).json({ error: "Not found" });
+  if (!log || !canAccessServerId(req, log.server_id)) {
+    return res.status(404).json({ error: "Not found" });
+  }
   res.json(log);
 });
 

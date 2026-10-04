@@ -4,6 +4,9 @@
   "description": "SSH log monitor dashboard - receives logs from SSH agents, runs detection engine, and serves a web dashboard",
   "main": "server.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"

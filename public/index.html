@@ -1,20 +1,327 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SSH Monitor</title>
+  <meta name="description" content="เฝ้าระวังการ login SSH ของทุกเซิร์ฟเวอร์แบบ real-time ตรวจจับ brute force อัตโนมัติ ติดตั้ง agent ได้ในคำสั่งเดียว" />
+  <script src="/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/landing.css" />
+  <style>body { font-family: 'Inter', 'Noto Sans Thai', system-ui, sans-serif; } h1, h2, h3, h4 { font-family: inherit; }</style>
 </head>
 <body>
-  <div id="root"></div>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="/config.js"></script>
-  <script type="text/babel" src="/js/app.js"></script>
+<div class="lp">
+
+  <nav class="lp-nav">
+    <div class="lp-container">
+      <a class="brand" href="/">SSH Monitor</a>
+      <div class="lp-nav-actions">
+        <a class="btn ghost" href="/app">เข้าสู่ระบบ</a>
+        <a class="btn primary" href="/app?next=/get-key">เริ่มใช้งาน</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="lp-hero">
+    <div class="lp-container">
+      <div>
+        <span class="lp-eyebrow"><span class="dot"></span> SSH Server Agent · Real-time</span>
+        <h1>รู้ทันทุกการ <span class="accent">login SSH</span><br />ของทุกเซิร์ฟเวอร์ <span class="nowrap">ในที่เดียว</span></h1>
+        <p class="lp-lead">
+          ติดตั้ง agent ตัวเล็กบนเซิร์ฟเวอร์ด้วยคำสั่งเดียว ระบบจะอ่าน log การเข้าใช้งาน SSH
+          ส่งมาที่ dashboard และแจ้งเตือนเมื่อมีคนพยายามเดารหัสผ่าน (brute force)
+        </p>
+        <div class="lp-cta">
+          <a class="btn primary" href="/app?next=/get-key">สร้างบัญชี &amp; รับ API key</a>
+          <a class="btn secondary" href="#install">ดูวิธีติดตั้ง</a>
+        </div>
+        <div class="lp-trust">
+          <span>ติดตั้งใน 1 นาที</span>
+          <span>รองรับ Linux หลาย distro</span>
+          <span>เห็นเฉพาะเซิร์ฟเวอร์ของคุณ</span>
+        </div>
+      </div>
+
+      <div class="lp-preview" aria-hidden="true">
+        <div class="lp-tilt">
+        <div class="lp-window">
+          <div class="lp-window-bar"><i></i><i></i><i></i><span>ssh-monitor / dashboard</span></div>
+          <div class="lp-window-body">
+            <div class="lp-mini-stats">
+              <div class="stat-card"><div class="label">Servers</div><div class="value blue">12</div></div>
+              <div class="stat-card"><div class="label">Online</div><div class="value green">11</div></div>
+              <div class="stat-card"><div class="label">Critical</div><div class="value red">2</div></div>
+            </div>
+            <div class="card" style="padding:6px 8px;">
+              <table>
+                <thead><tr><th>Server</th><th>Event</th><th class="hide-sm">IP</th><th>Risk</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">web01</td><td><span class="chip warning">Login failed</span></td><td class="mono hide-sm">203.0.113.9</td><td><span class="chip critical">Critical</span></td></tr>
+                  <tr><td class="mono">db02</td><td><span class="chip success">Login ok</span></td><td class="mono hide-sm">10.0.4.21</td><td><span class="chip low">Low</span></td></tr>
+                  <tr><td class="mono">api03</td><td><span class="chip error">Invalid user</span></td><td class="mono hide-sm">198.51.100.7</td><td><span class="chip high">High</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="lp-terminal">
+          <div><span class="p">root@web01:~#</span> systemctl status ssh-monitor</div>
+          <div class="m">● ssh-monitor.service - SSH Log Monitor Agent</div>
+          <div>&nbsp;&nbsp;Active: <span class="p">active (running)</span></div>
+          <div class="w">[FAILED LOGIN] user=root ip=203.0.113.9</div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- How it works -->
+  <section class="lp-section alt" id="how">
+    <div class="lp-container">
+      <div class="lp-head">
+        <div class="lp-kicker">วิธีทำงาน</div>
+        <h2>agent อ่าน log → ส่งมาที่ศูนย์กลาง → วิเคราะห์ความเสี่ยง</h2>
+        <p>ไม่ต้องเปิด port เพิ่มบนเซิร์ฟเวอร์ agent เป็นฝ่ายส่งข้อมูลออกมาเองผ่าน HTTPS</p>
+      </div>
+      <div class="lp-flow">
+        <div class="lp-node">
+          <div class="ico" style="--c: var(--blue)">▣</div>
+          <h3>1. SSH Server + Agent</h3>
+          <p>agent (Python) เฝ้าดูไฟล์ <code>/var/log/auth.log</code> แบบ real-time และแยกเหตุการณ์ เช่น login สำเร็จ, รหัสผิด, user ไม่มีในระบบ</p>
+        </div>
+        <div class="lp-arrow"><div><span class="ar">→</span><small>HTTPS + API key</small></div></div>
+        <div class="lp-node">
+          <div class="ico">⚙</div>
+          <h3>2. Monitor Server</h3>
+          <p>รับ log ทุก 30 วินาที (หรือครบ 10 รายการ) แล้วนับจำนวนครั้งที่ login ผิดจาก IP เดียวกันใน 10 นาทีล่าสุด</p>
+        </div>
+        <div class="lp-arrow"><div style="text-align:center"><span class="ar">→</span><small>incident</small></div></div>
+        <div class="lp-node">
+          <div class="ico" style="--c: var(--success)">▦</div>
+          <h3>3. Dashboard</h3>
+          <p>ดูสถานะเซิร์ฟเวอร์, log ทั้งหมด และ incident ที่ถูกจัดระดับความเสี่ยง พร้อมกด resolve ได้ทันที</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="lp-section" id="features">
+    <div class="lp-container">
+      <div class="lp-head">
+        <div class="lp-kicker">ฟีเจอร์</div>
+        <h2>ทุกอย่างที่ต้องใช้เฝ้าระวัง SSH</h2>
+        <p>เรียบง่ายพอสำหรับเซิร์ฟเวอร์เครื่องเดียว และขยายได้เมื่อมีหลายเครื่อง</p>
+      </div>
+      <div class="lp-features">
+        <div class="lp-feature"><div class="ico">⚡</div><h3>Real-time</h3><p>เห็น login ล่าสุดของทุกเครื่องบน dashboard เดียว พร้อม hostname, user และ IP ต้นทาง</p></div>
+        <div class="lp-feature"><div class="ico" style="--c: var(--warning)">⚠</div><h3>ตรวจจับ Brute force</h3><p>จัดระดับความเสี่ยงอัตโนมัติ และถ้าเดารหัสหลายครั้งแล้ว login สำเร็จ จะขึ้นเป็น CRITICAL ทันที</p></div>
+        <div class="lp-feature"><div class="ico" style="--c: var(--blue)">⌘</div><h3>ติดตั้งคำสั่งเดียว</h3><p>สคริปต์ติดตั้ง Python, สร้าง venv และตั้งเป็น service ให้เอง เริ่มทำงานอัตโนมัติเมื่อเปิดเครื่อง</p></div>
+        <div class="lp-feature"><div class="ico" style="--c: var(--success)">◉</div><h3>แยกข้อมูลตามผู้ใช้</h3><p>ผู้ใช้แต่ละคนเห็นเฉพาะเซิร์ฟเวอร์ของตัวเอง ส่วน admin เห็นภาพรวมของทุกคน</p></div>
+        <div class="lp-feature"><div class="ico" style="--c: var(--info)">⚿</div><h3>API key รายเครื่อง</h3><p>แต่ละเซิร์ฟเวอร์มี key ของตัวเอง กด regenerate ได้ทันทีถ้าสงสัยว่า key รั่ว</p></div>
+        <div class="lp-feature"><div class="ico" style="--c: var(--text-muted)">☾</div><h3>สำรอง log ในเครื่อง</h3><p>ถ้าส่งไม่สำเร็จ agent จะเก็บไว้ที่ <code style="font-size:11px">/opt/ssh-monitor/logs</code> และ rotate ไฟล์ให้อัตโนมัติ</p></div>
+      </div>
+
+      <div class="lp-risk">
+        <div><b style="color: var(--success)">LOW</b><span>login ผิด &lt; 5 ครั้ง</span></div>
+        <div><b style="color: var(--blue)">MEDIUM</b><span>≥ 5 ครั้ง ใน 10 นาที</span></div>
+        <div><b style="color: var(--warning)">HIGH</b><span>≥ 20 ครั้ง ใน 10 นาที</span></div>
+        <div><b style="color: var(--red)">CRITICAL</b><span>≥ 50 ครั้ง หรือเดารหัสแล้ว login สำเร็จ</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="lp-section alt" id="install">
+    <div class="lp-container lp-install">
+      <div class="lp-head">
+        <div class="lp-kicker">ติดตั้ง</div>
+        <h2>เริ่มเฝ้าระวังได้ใน <span class="nowrap">3 ขั้นตอน</span></h2>
+        <p>ใช้ได้กับเซิร์ฟเวอร์ Linux ที่รัน OpenSSH และมีสิทธิ์ sudo</p>
+      </div>
+
+      <div class="lp-steps">
+        <div class="lp-step">
+          <div>
+            <h3>สร้างบัญชีและรับ API key</h3>
+            <p>สมัครสมาชิกหรือเข้าสู่ระบบ แล้วไปที่เมนู <b>Get Key</b> ใน dashboard ตั้งชื่อเซิร์ฟเวอร์ (เช่น <code>web01</code>) แล้วกด Generate Key ระบบจะสร้าง key และคำสั่งติดตั้งให้พร้อม copy</p>
+          </div>
+        </div>
+
+        <div class="lp-step">
+          <div>
+            <h3>รันคำสั่งติดตั้งบนเซิร์ฟเวอร์</h3>
+            <p>SSH เข้าเซิร์ฟเวอร์ที่ต้องการเฝ้าดู แล้วรันคำสั่งนี้ โดยแทน <code>&lt;API_KEY&gt;</code> ด้วย key จากขั้นที่ 1</p>
+            <div class="lp-code" id="installBlock"><button class="lp-copy" data-copy="installCmd">Copy</button><span id="installCmd"></span></div>
+            <p style="margin-top:10px;">ไม่ใส่ key ก็ได้ สคริปต์จะถามให้ paste ระหว่างติดตั้ง</p>
+          </div>
+        </div>
+
+        <div class="lp-step">
+          <div>
+            <h3>ตรวจสอบและดูผลบน dashboard</h3>
+            <p>เซิร์ฟเวอร์จะขึ้นสถานะ <b>online</b> ภายในไม่กี่วินาทีหลังมีการ login SSH ครั้งแรก ตรวจสอบ agent ได้ด้วยคำสั่ง</p>
+            <div class="lp-code"><button class="lp-copy" data-copy="manageCmd">Copy</button><span id="manageCmd">sudo systemctl status ssh-monitor
+sudo journalctl -u ssh-monitor -f</span></div>
+            <a class="btn secondary sm" href="/app">เปิด Dashboard →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="lp-distros">
+        <span>Ubuntu</span><span>Debian</span><span>CentOS / RHEL</span><span>Rocky / Alma</span><span>Fedora</span><span>Alpine</span><span>Arch</span><span>openSUSE</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="lp-section" id="faq">
+    <div class="lp-container">
+      <div class="lp-head">
+        <div class="lp-kicker">คำถามที่พบบ่อย</div>
+        <h2>ข้อสงสัยก่อนเริ่มใช้</h2>
+      </div>
+      <div class="lp-faq">
+        <details>
+          <summary>agent ส่งข้อมูลอะไรออกไปบ้าง?</summary>
+          <p>เฉพาะเหตุการณ์ SSH ที่อ่านจาก auth log: เวลา, ประเภทเหตุการณ์, username, IP ต้นทาง และ hostname ของเครื่อง ไม่มีการส่งรหัสผ่านหรือเนื้อหาไฟล์อื่น</p>
+        </details>
+        <details>
+          <summary>ต้องเปิด port หรือแก้ firewall บนเซิร์ฟเวอร์ไหม?</summary>
+          <p>ไม่ต้อง agent เป็นฝ่ายส่งข้อมูลออก (outbound HTTPS) ไปที่ Monitor Server อย่างเดียว</p>
+        </details>
+        <details>
+          <summary>ใช้กับ CentOS / RHEL ที่ไม่มี auth.log ได้ไหม?</summary>
+          <p>ได้ แก้ไฟล์ <code>/opt/ssh-monitor/.env</code> ให้ <code>LOG_FILE=secure</code> แล้วรัน <code>sudo systemctl restart ssh-monitor</code></p>
+        </details>
+        <details>
+          <summary>ถอนการติดตั้งอย่างไร?</summary>
+          <p>รัน <code>sudo systemctl disable --now ssh-monitor</code> แล้วลบ <code>/etc/systemd/system/ssh-monitor.service</code> และโฟลเดอร์ <code>/opt/ssh-monitor</code></p>
+        </details>
+        <details>
+          <summary>ถ้า API key รั่วต้องทำอย่างไร?</summary>
+          <p>เข้า dashboard หรือหน้า Get API Key แล้วกด Regenerate key เดิมจะใช้ไม่ได้ทันที จากนั้นแก้ <code>MONITOR_API_KEY</code> ใน <code>/opt/ssh-monitor/.env</code> บนเซิร์ฟเวอร์แล้ว restart service</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="lp-section alt lp-last">
+    <div class="lp-container">
+      <div class="lp-band">
+        <div>
+          <h2>พร้อมเฝ้าระวังเซิร์ฟเวอร์แรกแล้วหรือยัง?</h2>
+          <p>สมัครฟรี รับ API key แล้วติดตั้ง agent ได้ทันที</p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a class="btn secondary" href="/app">เข้าสู่ระบบ</a>
+          <a class="btn primary" href="/app?next=/get-key">เริ่มใช้งาน</a>
+        </div>
+      </div>
+    </div>
+
+    <footer class="lp-footer">
+      <div class="lp-container">
+        <div>© SSH Monitor</div>
+        <div><a href="#install">ติดตั้ง</a><a href="/app">Dashboard</a></div>
+      </div>
+    </footer>
+  </section>
+</div>
+
+<script src="/config.js"></script>
+<script src="/js/buttons.js"></script>
+<script>
+  (function () {
+    var origin = API_CONFIG.BACKEND_URL || location.origin;
+    document.getElementById("installCmd").textContent =
+      "curl -sSL " + origin + "/install.sh | sudo bash -s -- \\\n  " + origin + "/api/logs <API_KEY>";
+
+    document.querySelectorAll(".lp-copy").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var text = document.getElementById(btn.dataset.copy).textContent.replace(/\\\n\s*/g, "");
+        navigator.clipboard.writeText(text).then(function () {
+          btn.textContent = "Copied!";
+          setTimeout(function () { btn.textContent = "Copy"; }, 1500);
+        });
+      });
+    });
+
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Hero showcase: display-only, so block copying/dragging and tilt it toward the cursor.
+    var preview = document.querySelector(".lp-preview");
+    var tilt = preview.querySelector(".lp-tilt");
+    ["copy", "cut", "dragstart", "selectstart"].forEach(function (ev) {
+      preview.addEventListener(ev, function (e) { e.preventDefault(); });
+    });
+    if (!reduceMotion && window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      var hero = document.querySelector(".lp-hero");
+      hero.addEventListener("mousemove", function (e) {
+        var r = preview.getBoundingClientRect();
+        var x = (e.clientX - (r.left + r.width / 2)) / (window.innerWidth / 2);
+        var y = (e.clientY - (r.top + r.height / 2)) / (window.innerHeight / 2);
+        x = Math.max(-1, Math.min(1, x));
+        y = Math.max(-1, Math.min(1, y));
+        tilt.classList.add("tracking");
+        tilt.style.transform = "rotateY(" + (x * 12).toFixed(2) + "deg) rotateX(" + (-y * 9).toFixed(2) + "deg)";
+      });
+      hero.addEventListener("mouseleave", function () {
+        tilt.classList.remove("tracking");
+        tilt.style.transform = "";
+      });
+    }
+    if ("IntersectionObserver" in window && !reduceMotion) {
+      var groups = [
+        [".lp-hero .lp-container > div:first-child", "from-left"],
+        [".lp-preview", "from-right"],
+        [".lp-head", ""],
+        [".lp-flow > *", ""],
+        [".lp-features > *", ""],
+        [".lp-risk > *", ""],
+        [".lp-step", ""],
+        [".lp-distros", ""],
+        [".lp-faq details", ""],
+        [".lp-band", ""]
+      ];
+      document.documentElement.classList.add("reveal-on");
+
+      // Stagger siblings that sit in the same grid/list so they pop in one after another.
+      groups.forEach(function (g) {
+        document.querySelectorAll(g[0]).forEach(function (el) {
+          el.classList.add("reveal");
+          if (g[1]) el.classList.add(g[1]);
+          var i = Array.prototype.indexOf.call(el.parentNode.children, el);
+          el.style.setProperty("--reveal-delay", Math.min(i, 6) * 90 + "ms");
+        });
+      });
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          var el = entry.target;
+          el.classList.add("is-visible");
+          io.unobserve(el);
+          // Drop the reveal transition afterwards so hover effects stay snappy.
+          el.addEventListener("transitionend", function done(e) {
+            if (e.target !== el || e.propertyName !== "transform") return;
+            el.removeEventListener("transitionend", done);
+            el.classList.remove("reveal", "from-left", "from-right", "is-visible");
+            el.style.removeProperty("--reveal-delay");
+          });
+        });
+      }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+
+      document.querySelectorAll(".reveal").forEach(function (el) { io.observe(el); });
+    }
+
+  })();
+</script>
 </body>
 </html>

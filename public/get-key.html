@@ -4,6 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Get API Key — SSH Monitor</title>
+  <script src="/theme.js"></script>
+  <script>
+    // Logged-in users only: bounce to the dashboard login before anything renders.
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("ssh_monitor_token"); } catch (e) {}
+      var ok = false;
+      if (t) {
+        try {
+          var p = JSON.parse(atob(t.split(".")[1]));
+          ok = !p.exp || p.exp * 1000 > Date.now();
+        } catch (e) {}
+      }
+      if (!ok) {
+        try { localStorage.removeItem("ssh_monitor_token"); } catch (e) {}
+        location.replace("/app?next=/get-key");
+      }
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -11,8 +30,8 @@
   <style>
     .key-box {
       background: var(--surface-2);
-      border: 1px solid #DC262640;
-      border-radius: 4px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 12px 16px;
       font-family: var(--font-mono);
       font-size: 13px;
@@ -27,6 +46,10 @@
       align-items: center;
       gap: 8px;
       margin-bottom: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
     }
     .server-row .meta { min-width: 0; }
     .server-row .name { font-weight: 600; }
@@ -36,31 +59,15 @@
 </head>
 <body>
   <div class="login-wrap">
+    <button type="button" class="theme-toggle floating" id="themeToggle" aria-label="Toggle light / dark mode"></button>
     <div class="login-card" style="width: 460px;">
+      <div class="hint" style="margin: 0 0 12px;"><a href="/app">&larr; Back to Dashboard</a> &nbsp;·&nbsp; <a href="/">Home</a></div>
       <h1>Get API Key</h1>
-      <div class="sub" id="subtitle">Sign in to request an API key for your SSH server</div>
+      <div class="sub">Generate and manage API keys for your SSH servers</div>
 
       <div id="error" class="error-banner" style="display:none;"></div>
 
-      <!-- Sign in / register -->
-      <div id="authView">
-        <div class="field">
-          <label>Username</label>
-          <input class="input" id="authUsername" autocomplete="username" />
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input class="input" id="authPassword" type="password" autocomplete="current-password" />
-        </div>
-        <button class="btn primary" id="authSubmit" style="width:100%;">Sign In</button>
-        <div class="hint" style="text-align:center;margin-top:12px;">
-          <span id="authToggleText">No account?</span>
-          <a href="#" id="authToggle">Register</a>
-        </div>
-      </div>
-
-      <!-- Key generation (shown once signed in) -->
-      <div id="keyView" style="display:none;">
+      <div id="keyView">
         <div class="field">
           <label>Server name</label>
           <input class="input" id="serverName" placeholder="e.g. web01" autocomplete="off" />
@@ -85,8 +92,16 @@
   </div>
 
   <script src="/config.js"></script>
+  <script src="/js/buttons.js"></script>
   <script>
     const backendOrigin = API_CONFIG.BACKEND_URL || location.origin;
+
+    const themeBtn = document.getElementById("themeToggle");
+    function renderThemeBtn() {
+      themeBtn.textContent = window.currentTheme() === "dark" ? "☀ Light mode" : "☾ Dark mode";
+    }
+    themeBtn.addEventListener("click", () => { window.toggleTheme(); renderThemeBtn(); });
+    renderThemeBtn();
     const TOKEN_KEY = "ssh_monitor_token";
     function getToken() { return localStorage.getItem(TOKEN_KEY); }
     function setToken(t) {
@@ -105,6 +120,7 @@
       const res = await fetch(API_CONFIG.BACKEND_URL + path, { ...opts, headers });
       if (res.status === 401) {
         setToken(null);
+        location.replace("/app?next=/get-key");
         throw new Error("Session expired — please sign in again");
       }
       if (!res.ok) {
@@ -114,54 +130,6 @@
       }
       return res.json();
     }
-
-    const authView = document.getElementById("authView");
-    const keyView = document.getElementById("keyView");
-    const subtitle = document.getElementById("subtitle");
-    let authMode = "login";
-
-    function showAuthView() {
-      authView.style.display = "block";
-      keyView.style.display = "none";
-      subtitle.textContent = "Sign in to request an API key for your SSH server";
-    }
-
-    function showKeyView() {
-      authView.style.display = "none";
-      keyView.style.display = "block";
-      subtitle.textContent = "Generate and manage API keys for your SSH servers";
-      loadMyServers();
-    }
-
-    document.getElementById("authToggle").addEventListener("click", (e) => {
-      e.preventDefault();
-      hideError();
-      authMode = authMode === "login" ? "register" : "login";
-      document.getElementById("authSubmit").textContent = authMode === "login" ? "Sign In" : "Create Account";
-      document.getElementById("authToggleText").textContent = authMode === "login" ? "No account?" : "Already have an account?";
-      document.getElementById("authToggle").textContent = authMode === "login" ? "Register" : "Sign in";
-    });
-
-    document.getElementById("authSubmit").addEventListener("click", async () => {
-      hideError();
-      const username = document.getElementById("authUsername").value.trim();
-      const password = document.getElementById("authPassword").value;
-      if (!username || !password) { showError("Username and password are required"); return; }
-      const btn = document.getElementById("authSubmit");
-      btn.disabled = true;
-      try {
-        const data = await api("/api/auth/" + authMode, {
-          method: "POST",
-          body: JSON.stringify({ username, password }),
-        });
-        setToken(data.token);
-        showKeyView();
-      } catch (e) {
-        showError(e.message);
-      } finally {
-        btn.disabled = false;
-      }
-    });
 
     document.getElementById("generateBtn").addEventListener("click", async () => {
       hideError();
@@ -197,8 +165,7 @@
     document.getElementById("logoutLink").addEventListener("click", (e) => {
       e.preventDefault();
       setToken(null);
-      document.getElementById("newKeyBox").style.display = "none";
-      showAuthView();
+      location.href = "/app";
     });
 
     function escapeHtml(str) {
@@ -263,13 +230,8 @@
       }
     }
 
-    // Init — reuses the same token the main dashboard (/) stores, so an
-    // already-logged-in session carries over to this page automatically.
-    if (getToken()) {
-      showKeyView();
-    } else {
-      showAuthView();
-    }
+    // Reuses the token the dashboard stores; the <head> guard already sent anonymous visitors to login.
+    if (getToken()) loadMyServers();
   </script>
 </body>
 </html>

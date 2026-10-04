@@ -10,17 +10,30 @@ function canAccessServer(req, server) {
   return req.user.role === "admin" || server.user_id === req.user.id;
 }
 
-// Admin: every registered server across all users
-router.get("/servers", requireAdmin, (req, res) => {
+// Admin: every server across all users (with owner). User: only their own servers.
+router.get("/servers", (req, res) => {
+  const isAdmin = req.user.role === "admin";
   const servers = db
     .prepare(
-      `SELECT s.*,
+      `SELECT s.*, u.username AS owner,
         (SELECT COUNT(*) FROM ssh_logs l WHERE l.server_id = s.id) AS log_count,
         (SELECT COUNT(*) FROM incidents i WHERE i.server_id = s.id AND i.status = 'OPEN') AS open_incidents
-       FROM servers s ORDER BY s.id DESC`
+       FROM servers s LEFT JOIN users u ON u.id = s.user_id
+       ${isAdmin ? "" : "WHERE s.user_id = ?"} ORDER BY s.id DESC`
+    )
+    .all(...(isAdmin ? [] : [req.user.id]));
+  res.json(servers);
+});
+
+router.get("/users", requireAdmin, (req, res) => {
+  const users = db
+    .prepare(
+      `SELECT u.id, u.username, u.role,
+        (SELECT COUNT(*) FROM servers s WHERE s.user_id = u.id) AS server_count
+       FROM users u ORDER BY u.id`
     )
     .all();
-  res.json(servers);
+  res.json(users);
 });
 
 // Self-service: only the caller's own servers/keys (used by /get-key)
