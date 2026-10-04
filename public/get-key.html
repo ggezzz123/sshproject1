@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Get API Key — SSH Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .key-box {
+      background: var(--surface-2);
+      border: 1px solid #DC262640;
+      border-radius: 4px;
+      padding: 12px 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      word-break: break-all;
+      margin: 8px 0 12px;
+      color: var(--success);
+    }
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .server-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .server-row .meta { min-width: 0; }
+    .server-row .name { font-weight: 600; }
+    .server-row .key { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .server-row .actions { display: flex; gap: 4px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card" style="width: 460px;">
+      <h1>Get API Key</h1>
+      <div class="sub" id="subtitle">Sign in to request an API key for your SSH server</div>
+
+      <div id="error" class="error-banner" style="display:none;"></div>
+
+      <!-- Sign in / register -->
+      <div id="authView">
+        <div class="field">
+          <label>Username</label>
+          <input class="input" id="authUsername" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input class="input" id="authPassword" type="password" autocomplete="current-password" />
+        </div>
+        <button class="btn primary" id="authSubmit" style="width:100%;">Sign In</button>
+        <div class="hint" style="text-align:center;margin-top:12px;">
+          <span id="authToggleText">No account?</span>
+          <a href="#" id="authToggle">Register</a>
+        </div>
+      </div>
+
+      <!-- Key generation (shown once signed in) -->
+      <div id="keyView" style="display:none;">
+        <div class="field">
+          <label>Server name</label>
+          <input class="input" id="serverName" placeholder="e.g. web01" autocomplete="off" />
+        </div>
+        <button class="btn primary" id="generateBtn" style="width:100%;">Generate Key</button>
+
+        <div id="newKeyBox" style="display:none; margin-top:16px;">
+          <label>New API key — copy it now</label>
+          <div class="key-box" id="newKeyValue"></div>
+          <button class="btn secondary" id="copyNewKey" style="width:100%;">Copy Key</button>
+          <label style="margin-top:12px;">Install command</label>
+          <div class="key-box" id="installCmd" style="color: var(--text-muted); font-size:11px;"></div>
+        </div>
+
+        <div id="myServers" style="margin-top:24px;"></div>
+
+        <div class="hint" style="text-align:center;margin-top:16px;">
+          <a href="#" id="logoutLink">Log out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/config.js"></script>
+  <script>
+    const backendOrigin = API_CONFIG.BACKEND_URL || location.origin;
+    const TOKEN_KEY = "ssh_monitor_token";
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function setToken(t) {
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
+    }
+
+    const errorEl = document.getElementById("error");
+    function showError(msg) { errorEl.textContent = msg; errorEl.style.display = "block"; }
+    function hideError() { errorEl.style.display = "none"; }
+
+    async function api(path, opts = {}) {
+      const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+      const token = getToken();
+      if (token) headers["Authorization"] = "Bearer " + token;
+      const res = await fetch(API_CONFIG.BACKEND_URL + path, { ...opts, headers });
+      if (res.status === 401) {
+        setToken(null);
+        throw new Error("Session expired — please sign in again");
+      }
+      if (!res.ok) {
+        let msg = res.statusText;
+        try { msg = (await res.json()).error || msg; } catch (e) {}
+        throw new Error(msg);
+      }
+      return res.json();
+    }
+
+    const authView = document.getElementById("authView");
+    const keyView = document.getElementById("keyView");
+    const subtitle = document.getElementById("subtitle");
+    let authMode = "login";
+
+    function showAuthView() {
+      authView.style.display = "block";
+      keyView.style.display = "none";
+      subtitle.textContent = "Sign in to request an API key for your SSH server";
+    }
+
+    function showKeyView() {
+      authView.style.display = "none";
+      keyView.style.display = "block";
+      subtitle.textContent = "Generate and manage API keys for your SSH servers";
+      loadMyServers();
+    }
+
+    document.getElementById("authToggle").addEventListener("click", (e) => {
+      e.preventDefault();
+      hideError();
+      authMode = authMode === "login" ? "register" : "login";
+      document.getElementById("authSubmit").textContent = authMode === "login" ? "Sign In" : "Create Account";
+      document.getElementById("authToggleText").textContent = authMode === "login" ? "No account?" : "Already have an account?";
+      document.getElementById("authToggle").textContent = authMode === "login" ? "Register" : "Sign in";
+    });
+
+    document.getElementById("authSubmit").addEventListener("click", async () => {
+      hideError();
+      const username = document.getElementById("authUsername").value.trim();
+      const password = document.getElementById("authPassword").value;
+      if (!username || !password) { showError("Username and password are required"); return; }
+      const btn = document.getElementById("authSubmit");
+      btn.disabled = true;
+      try {
+        const data = await api("/api/auth/" + authMode, {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        });
+        setToken(data.token);
+        showKeyView();
+      } catch (e) {
+        showError(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("generateBtn").addEventListener("click", async () => {
+      hideError();
+      const name = document.getElementById("serverName").value.trim();
+      if (!name) { showError("Server name is required"); return; }
+      const btn = document.getElementById("generateBtn");
+      btn.disabled = true;
+      btn.textContent = "Generating...";
+      try {
+        const server = await api("/api/servers", { method: "POST", body: JSON.stringify({ name }) });
+        document.getElementById("newKeyValue").textContent = server.api_key;
+        document.getElementById("installCmd").textContent =
+          `curl -sSL ${backendOrigin}/install.sh | sudo bash -s -- ${backendOrigin}/api/logs ${server.api_key}`;
+        document.getElementById("newKeyBox").style.display = "block";
+        document.getElementById("serverName").value = "";
+        loadMyServers();
+      } catch (e) {
+        showError(e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate Key";
+      }
+    });
+
+    document.getElementById("copyNewKey").addEventListener("click", () => {
+      navigator.clipboard.writeText(document.getElementById("newKeyValue").textContent).then(() => {
+        const b = document.getElementById("copyNewKey");
+        b.textContent = "Copied!";
+        setTimeout(() => (b.textContent = "Copy Key"), 1500);
+      });
+    });
+
+    document.getElementById("logoutLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      setToken(null);
+      document.getElementById("newKeyBox").style.display = "none";
+      showAuthView();
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function loadMyServers() {
+      const container = document.getElementById("myServers");
+      container.innerHTML = '<div class="hint">Loading your servers…</div>';
+      try {
+        const servers = await api("/api/my-servers");
+        if (!servers.length) {
+          container.innerHTML = '<div class="hint">No servers yet — generate your first key above.</div>';
+          return;
+        }
+        container.innerHTML = "<label>Your servers</label>";
+        servers.forEach((s) => {
+          const row = document.createElement("div");
+          row.className = "card server-row";
+
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.innerHTML = `<div class="name">${escapeHtml(s.name)}</div><div class="key mono">${escapeHtml(s.api_key)}</div>`;
+
+          const actions = document.createElement("div");
+          actions.className = "actions";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "btn ghost sm";
+          copyBtn.textContent = "Copy";
+          copyBtn.addEventListener("click", () => {
+            navigator.clipboard.writeText(s.api_key).then(() => {
+              copyBtn.textContent = "Copied!";
+              setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+            });
+          });
+
+          const regenBtn = document.createElement("button");
+          regenBtn.className = "btn ghost sm";
+          regenBtn.textContent = "Regenerate";
+          regenBtn.addEventListener("click", async () => {
+            if (!confirm(`Regenerate key for "${s.name}"? The old key will stop working immediately.`)) return;
+            try {
+              await api(`/api/servers/${s.id}/regenerate-key`, { method: "POST" });
+              loadMyServers();
+            } catch (e) {
+              showError(e.message);
+            }
+          });
+
+          actions.appendChild(copyBtn);
+          actions.appendChild(regenBtn);
+          row.appendChild(meta);
+          row.appendChild(actions);
+          container.appendChild(row);
+        });
+      } catch (e) {
+        container.innerHTML = "";
+        showError(e.message);
+      }
+    }
+
+    // Init — reuses the same token the main dashboard (/) stores, so an
+    // already-logged-in session carries over to this page automatically.
+    if (getToken()) {
+      showKeyView();
+    } else {
+      showAuthView();
+    }
+  </script>
+</body>
+</html>
