@@ -7,5 +7,4 @@ data
 .gitignore
 README.md
 render.yaml
-netlify.toml
 tools
