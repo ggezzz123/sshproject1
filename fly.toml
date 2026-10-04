@@ -1,59 +1,36 @@
-<<<<<<< HEAD
-# fly.toml app configuration file generated for ssh-monitor on 2026-10-04T21:09:38Z
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
+# fly.toml app configuration file for ssh-monitor
+# https://fly.io/docs/reference/configuration/
 
 app = 'ssh-monitor'
-primary_region = 'ams'
-
-[build]
-
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ['app']
-
-[[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 1024
-=======
-# Rename `app` below to something unique (Fly app names are global) before first deploy.
-app = "ssh-monitor"
-primary_region = "sin"  # Singapore - closest Fly region to Thailand
+primary_region = 'ams'   # matches the region `fly launch` already created this app in
 
 [build]
 
 [env]
-  PORT = "8080"
-  HOST = "0.0.0.0"
-  DB_PATH = "/data/ssh-monitor.db"
-  TRUST_PROXY = "1"
-  ADMIN_USERNAME = "admin"
-  ALERT_MIN_RISK = "HIGH"
-  LOG_TZ_OFFSET = "+07:00"
-  ALERT_TZ = "Asia/Bangkok"
+  PORT = '8080'
+  HOST = '0.0.0.0'
+  DB_PATH = '/data/ssh-monitor.db'
+  TRUST_PROXY = '1'
+  ADMIN_USERNAME = 'admin'
+  ALERT_MIN_RISK = 'HIGH'
+  LOG_TZ_OFFSET = '+07:00'
+  ALERT_TZ = 'Asia/Bangkok'
 
 # Persistent volume for the SQLite file - survives deploys and restarts.
-# Create it once before the first deploy: fly volumes create data --region sin --size 1
+# Create it once, in the SAME region as primary_region above:
+#   fly volumes create data --region ams --size 1
 [[mounts]]
-  source = "data"
-  destination = "/data"
+  source = 'data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"   # keep running - this is the whole point vs. Render free tier
+  auto_stop_machines = 'off'   # keep running - this is the whole point vs. Render free tier
   auto_start_machines = true
   min_machines_running = 1
-  processes = ["app"]
+  processes = ['app']
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
->>>>>>> e0f02a9 (Update SSH monitor)
+  size = 'shared-cpu-1x'
+  memory = '256mb'
