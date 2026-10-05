@@ -96,6 +96,14 @@ function supersedeBruteForce(serverId, ip, byType) {
   ).run(ATTACK_TYPES[byType], serverId, ip);
 }
 
+// Incidents on test servers (attack simulator) only send real alerts when the simulator asks for it;
+// set synchronously around analyzeBatch() by routes/simulateRoutes.js.
+let testAlerts = false;
+function withTestAlerts(on, fn) {
+  testAlerts = !!on;
+  try { return fn(); } finally { testAlerts = false; }
+}
+
 function upsertIncident(f) {
   const nowIso = new Date().toISOString();
   const existing = db
@@ -125,13 +133,15 @@ function upsertIncident(f) {
   }
 
   const row = db.prepare("SELECT * FROM incidents WHERE id = ?").get(id);
+  const server = db.prepare("SELECT hostname, name, is_test FROM servers WHERE id = ?").get(f.serverId) || {};
+  if (server.is_test && !testAlerts) return row;
   if (notifier.shouldAlert(risk, row.alerted_risk)) {
     db.prepare("UPDATE incidents SET alerted_risk = ? WHERE id = ?").run(risk, id);
     if (alertIsDuplicate(f.type, f.key, risk)) return row;
-    const server = db.prepare("SELECT hostname, name FROM servers WHERE id = ?").get(f.serverId) || {};
     const verdict = row.source_ip ? analyzeIp(row.source_ip, null).verdict.text : null;
+    const title = (server.is_test ? "[TEST] " : "") + (ATTACK_TYPES[f.type] || f.type);
     notifier
-      .send({ ...row, risk_level: risk, title: ATTACK_TYPES[f.type] || f.type, server_hostname: server.hostname || server.name, verdict })
+      .send({ ...row, risk_level: risk, title, server_hostname: server.hostname || server.name, verdict })
       .catch((e) => console.error("[alert]", e.message));
   }
   return row;
@@ -474,4 +484,4 @@ function analyzeIp(ip, serverIds) {
   };
 }
 
-module.exports = { analyzeBatch, analyzeIp, ATTACK_TYPES };
+module.exports = { analyzeBatch, analyzeIp, ATTACK_TYPES, withTestAlerts };

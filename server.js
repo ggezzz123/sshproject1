@@ -43,6 +43,7 @@ seedAdmin();
 app.use(require("./routes/agentRoutes"));
 app.use(require("./routes/authRoutes"));
 app.use(require("./routes/profileRoutes"));
+app.use(require("./routes/simulateRoutes"));
 app.use("/api", require("./routes/serverRoutes"));
 app.use("/api", require("./routes/logRoutes"));
 app.use("/api", require("./routes/incidentRoutes"));

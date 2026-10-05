@@ -37,7 +37,8 @@ function findOrCreateServer(hostname, apiKey, ip) {
   return server;
 }
 
-function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
+// opts.countryFor(ip): optional override of the IP->country lookup (used by the attack simulator)
+function ingestLogs(payload, apiKey, remoteIp, matchedServer, opts = {}) {
   const hostname = payload.hostname || "unknown";
   const logs = Array.isArray(payload.logs) ? payload.logs : [];
   let server = matchedServer;
@@ -70,7 +71,7 @@ function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
   db.exec("BEGIN");
   try {
     for (const l of normalized) {
-      insert.run(server.id, l.event_time, l.ip, l.user, l.type, l.severity, l.message, countryOf(l.ip));
+      insert.run(server.id, l.event_time, l.ip, l.user, l.type, l.severity, l.message, (opts.countryFor && opts.countryFor(l.ip)) || countryOf(l.ip));
     }
     db.exec("COMMIT");
   } catch (e) {
@@ -99,3 +100,4 @@ router.post("/api/logs", apiKeyAuth, (req, res) => {
 });
 
 module.exports = router;
+module.exports.ingestLogs = ingestLogs;

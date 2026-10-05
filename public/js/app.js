@@ -993,7 +993,7 @@ function Servers() {
               <tbody>
                 {servers.map((s) => (
                   <tr key={s.id}>
-                    <td>{s.name}</td>
+                    <td>{s.name} {s.is_test ? <Chip kind="info">ทดสอบ</Chip> : null}</td>
                     {isAdmin && <td>{s.owner || "-"}</td>}
                     <td className="mono">{s.hostname || "-"}</td>
                     <td className="mono">{s.ip_address || "-"}</td>
@@ -1603,12 +1603,124 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
   );
 }
 
+/* ---------- Attack test (simulator) ---------- */
+function AttackTest({ go }) {
+  const [info, setInfo] = useState(null);
+  const [alerts, setAlerts] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    api("/api/simulate").then(setInfo).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function simulate(name) {
+    setBusy(name); setError(""); setResult(null);
+    try {
+      const d = await api("/api/simulate", { method: "POST", body: JSON.stringify({ scenario: name, alerts }) });
+      setResult({ ...d, name });
+      setInfo((i) => ({ ...i, servers: d.servers }));
+    } catch (e) { setError(e.message); } finally { setBusy(""); }
+  }
+  async function clearAll() {
+    if (!confirm("ลบเซิร์ฟเวอร์ทดสอบ พร้อม log และเหตุการณ์ที่จำลองไว้ทั้งหมด?")) return;
+    setBusy("clear"); setError("");
+    try { await api("/api/simulate", { method: "DELETE" }); setResult(null); load(); } catch (e) { setError(e.message); } finally { setBusy(""); }
+  }
+
+  const servers = info ? info.servers : [];
+  const totals = servers.reduce((t, s) => ({ logs: t.logs + s.logs, incidents: t.incidents + s.incidents }), { logs: 0, incidents: 0 });
+  const label = (name) => ((info && info.scenarios.find((s) => s.name === name)) || {}).label || name;
+
+  return (
+    <div>
+      <div className="page-title">
+        <h1>ทดสอบการโจมตี</h1>
+        <div className="sub">จำลองการโจมตี SSH เพื่อทดสอบว่าระบบตรวจจับและแจ้งเตือนได้ถูกต้อง</div>
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+
+      <div className="card sim-intro">
+        <div>
+          <p>ข้อมูลจำลองจะถูกส่งเข้า <b>เซิร์ฟเวอร์ทดสอบ</b> ของคุณเท่านั้น (<span className="mono">ทดสอบ-1</span>, <span className="mono">ทดสอบ-2</span> ระบบสร้างให้เอง) ไม่ปนกับเซิร์ฟเวอร์จริง
+            IP ผู้โจมตีเป็นช่วงที่สงวนไว้สำหรับเอกสาร (RFC 5737) จึงไม่ใช่เครื่องของใครจริง ส่วนประเทศบนลูกโลกเป็นค่าสมมติ</p>
+          <label className="sim-check">
+            <input type="checkbox" checked={alerts} onChange={(e) => setAlerts(e.target.checked)} />
+            ส่งแจ้งเตือนจริงด้วย (LINE / Discord / Slack / Telegram ที่ตั้งไว้) ข้อความจะขึ้นต้นด้วย [TEST]
+          </label>
+          <div className="sim-stats">
+            {servers.length
+              ? <>ข้อมูลทดสอบตอนนี้: {fmtNum(totals.logs)} log · {fmtNum(totals.incidents)} เหตุการณ์ ใน {servers.length} เซิร์ฟเวอร์ทดสอบ</>
+              : <>ยังไม่มีข้อมูลทดสอบ</>}
+          </div>
+        </div>
+        <div className="sim-actions">
+          <button className="btn primary" disabled={!!busy || !info} onClick={() => simulate("all")}>
+            {busy === "all" ? "กำลังจำลอง..." : "⚡ จำลองทุกสถานการณ์"}
+          </button>
+          <button className="btn ghost sm danger" disabled={!!busy || !servers.length} onClick={clearAll}>
+            {busy === "clear" ? "กำลังลบ..." : "ลบข้อมูลทดสอบทั้งหมด"}
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <section className="card sim-result">
+          <div className="viz-head">
+            <div>
+              <h3>ผลการจำลอง: {result.name === "all" ? "ทุกสถานการณ์" : label(result.name)}</h3>
+              <div className="sub">ส่ง {fmtNum(result.events)} เหตุการณ์ · ตรวจพบ {result.incidents.length} เหตุการณ์ความปลอดภัย</div>
+            </div>
+            {go && <button className="btn secondary sm" onClick={() => go("dashboard")}>ดูบนแดชบอร์ด →</button>}
+          </div>
+          {!result.incidents.length ? (
+            <div className="viz-empty">ไม่พบการโจมตี {result.name === "baseline" ? "(ถูกต้อง: การใช้งานปกติต้องไม่เกิดเหตุการณ์)" : ""}</div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>ความเสี่ยง</th><th>รูปแบบการโจมตี</th><th>เซิร์ฟเวอร์</th><th>ต้นทาง</th></tr></thead>
+                <tbody>
+                  {result.incidents.map((i) => (
+                    <tr key={i.id}>
+                      <td>{riskChip(i.risk_level)}</td>
+                      <td style={{ minWidth: 260 }}><b>{ATTACK_LABEL[i.attack_type] || i.attack_type}</b><div style={{ color: "var(--text-muted)", fontSize: 12 }}>{i.description}</div></td>
+                      <td className="mono">{i.server_name}</td>
+                      <td className="mono">{i.source_ip || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="sim-grid">
+        {(info ? info.scenarios : []).map((s, n) => (
+          <div key={s.name} className="card sim-card">
+            <div className="sim-n">{n + 1}</div>
+            <h4>{s.label}</h4>
+            <p>{s.desc}</p>
+            <div className="sim-expect"><span>ผลที่ควรได้</span>{s.expect}</div>
+            <button className="btn secondary sm" disabled={!!busy} onClick={() => simulate(s.name)}>
+              {busy === s.name ? "กำลังจำลอง..." : "จำลอง"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- App ---------- */
 const PAGES = [
   { key: "dashboard", label: "แดชบอร์ด", icon: "▦" },
   { key: "servers", label: "เซิร์ฟเวอร์", icon: "▣" },
   { key: "logs", label: "Log", icon: "≡" },
   { key: "incidents", label: "เหตุการณ์", icon: "⚠" },
+  { key: "simulate", label: "ทดสอบการโจมตี", icon: "⚡" },
   { key: "users", label: "ผู้ใช้", icon: "◉" },
 ];
 
@@ -1684,6 +1796,7 @@ function App() {
         {page === "servers" && <Servers />}
         {page === "logs" && <Logs />}
         {page === "incidents" && <Incidents />}
+        {page === "simulate" && <AttackTest go={setPage} />}
         {page === "users" && isAdmin && <Users />}
         {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} onProfile={setMe} />}
       </main>

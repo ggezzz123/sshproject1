@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS registrations (
     created_at DATETIME NOT NULL
 );
 `);
-addColumns("servers", { user_id: "INTEGER REFERENCES users(id)" });
+addColumns("servers", { user_id: "INTEGER REFERENCES users(id)", is_test: "INTEGER DEFAULT 0" });
 addColumns("incidents", {
   attack_type: "VARCHAR(50) DEFAULT 'brute_force'",
   incident_key: "VARCHAR(255)",
