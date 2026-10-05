@@ -1,14 +1,14 @@
-// Attack simulator for the web "ทดสอบการโจมตี" page. Fake SSH events go only to the caller's own
+// Attack simulator for the web "ทดสอบการโจมตี" page (admin only). Fake SSH events go only to the caller's own
 // dedicated test servers (servers.is_test = 1), which are created on first use and removed with DELETE.
 const express = require("express");
 const db = require("../db");
-const { jwtAuth, generateApiKey } = require("../middleware/auth");
+const { jwtAuth, requireAdmin, generateApiKey } = require("../middleware/auth");
 const { ingestLogs } = require("./agentRoutes");
 const { withTestAlerts } = require("../analysisEngine");
 const { makeScenarios, demoCountry } = require("../simulation");
 
 const router = express.Router();
-router.use("/api/simulate", jwtAuth);
+router.use("/api/simulate", jwtAuth, requireAdmin); // admin accounts only
 
 const TEST_SERVERS = 2; // the cross-host scenario needs two
 const lastRun = new Map(); // userId -> time of the last run

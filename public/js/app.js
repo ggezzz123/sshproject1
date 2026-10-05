@@ -1826,7 +1826,8 @@ function App() {
     if (authed) api("/api/profile").then(setMe).catch(() => {});
     else setMe(null);
   }, [authed]);
-  const pages = PAGES.filter((p) => p.key !== "users" || isAdmin);
+  const ADMIN_PAGES = ["users", "simulate"];
+  const pages = PAGES.filter((p) => !ADMIN_PAGES.includes(p.key) || isAdmin);
 
   function handleLogin(user) {
     // Only this fixed path is honored, so ?next= can't be abused as an open redirect.
@@ -1882,7 +1883,7 @@ function App() {
         {page === "servers" && <Servers />}
         {page === "logs" && <Logs />}
         {page === "incidents" && <Incidents />}
-        {page === "simulate" && <AttackTest go={setPage} />}
+        {page === "simulate" && isAdmin && <AttackTest go={setPage} />}
         {page === "users" && isAdmin && <Users />}
         {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} onProfile={setMe} />}
       </main>
