@@ -129,6 +129,21 @@ npm start
 | `ORACLE_USER`, `ORACLE_PASSWORD`, `ORACLE_CONNECT_STRING` | เปิดการคัดลอกข้อมูลไป Oracle |
 | `TS_AUTHKEY` | auth key ของ Tailscale (ตอน deploy บน Fly.io) |
 
+## รันบนเครื่อง Windows ของตัวเอง + Tailscale Funnel (ฟรี)
+
+ตอนนี้ระบบรันบนเครื่อง Windows และเปิดให้อินเทอร์เน็ตเข้าผ่าน **Tailscale Funnel** ที่ `https://ssh-monitor.tail634b6e.ts.net`
+
+1. ตั้ง `.env`: `HOST=127.0.0.1` (รับเฉพาะในเครื่อง), `TRUST_PROXY=1`, `PUBLIC_URL=https://<ชื่อเครื่อง>.<tailnet>.ts.net` และ `JWT_SECRET` ที่สุ่มยาว ๆ
+2. ให้เว็บเริ่มเองทุกครั้งที่ล็อกอิน Windows และรีสตาร์ทเองถ้าแครช:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
+   ```
+   log อยู่ที่ `data\server.log` (รอบก่อนหน้า `data\server.prev.log`, ประวัติรีสตาร์ท `data\restarts.log`)
+3. เปิด Funnel ครั้งเดียว (ค่าจะคงอยู่แม้รีบูต): `tailscale funnel --bg 5000` ปิดด้วย `tailscale funnel --https=443 off`
+4. ปิด sleep ของเครื่อง: `powercfg /change standby-timeout-ac 0`
+
+เว็บใช้ได้เฉพาะตอนเครื่องเปิดอยู่ ถ้าเครื่องปิด agent จะส่ง log ไม่ได้ในช่วงนั้น
+
 ## Deploy บน Fly.io
 
 ```bash
