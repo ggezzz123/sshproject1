@@ -39,7 +39,7 @@ router.get("/logs", (req, res) => {
 router.get("/logs/:id", (req, res) => {
   const log = db.prepare("SELECT * FROM ssh_logs WHERE id = ?").get(req.params.id);
   if (!log || !canAccessServerId(req, log.server_id)) {
-    return res.status(404).json({ error: "Not found" });
+    return res.status(404).json({ error: "ไม่พบข้อมูล" });
   }
   res.json(log);
 });

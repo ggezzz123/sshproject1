@@ -43,8 +43,8 @@ async function sendVerification(req, user) {
   const link = `${baseUrl(req)}/api/auth/verify-email?token=${makeVerifyToken(user)}`;
   return sendMail({
     to: user.email,
-    subject: "Verify your email - SSH Monitor",
-    text: `Hi ${user.username},\n\nConfirm this email address for your SSH Monitor account:\n${link}\n\nThe link is valid for 24 hours. If you did not request this, ignore this email.`,
+    subject: "ยืนยันอีเมลของคุณ - SSH Monitor",
+    text: `สวัสดีคุณ ${user.username}\n\nกรุณายืนยันอีเมลนี้สำหรับบัญชี SSH Monitor ของคุณ:\n${link}\n\nลิงก์ใช้ได้ 24 ชั่วโมง หากคุณไม่ได้ขอ กรุณาเพิกเฉยอีเมลนี้`,
   });
 }
 
@@ -95,7 +95,7 @@ router.post("/api/auth/forgot-password", async (req, res) => {
   const id = String((req.body || {}).identifier || "").trim();
   // Same answer whether or not the account exists, so this can't be used to discover accounts
   const answer = { ok: true, mail_configured: mailEnabled };
-  if (!id) return res.status(400).json({ error: "Enter your email or username" });
+  if (!id) return res.status(400).json({ error: "กรุณากรอกอีเมลหรือชื่อผู้ใช้" });
   const user = db.prepare("SELECT * FROM users WHERE lower(email) = lower(?) OR username = ?").get(id, id);
   if (!user || !isLocal(user) || !user.email) return res.json(answer);
   if (Date.now() - (lastReset.get(user.id) || 0) < 60000) return res.json(answer);
@@ -103,8 +103,8 @@ router.post("/api/auth/forgot-password", async (req, res) => {
   const link = `${baseUrl(req)}/app#reset=${makeResetToken(user)}`;
   await sendMail({
     to: user.email,
-    subject: "Reset your password - SSH Monitor",
-    text: `Hi ${user.username},\n\nSomeone (hopefully you) asked to reset the password of your SSH Monitor account.\nSet a new password here:\n${link}\n\nThe link is valid for 1 hour and works once. If you did not ask for this, ignore this email; your password stays the same.`,
+    subject: "รีเซ็ตรหัสผ่าน - SSH Monitor",
+    text: `สวัสดีคุณ ${user.username}\n\nมีการขอรีเซ็ตรหัสผ่านของบัญชี SSH Monitor ของคุณ\nตั้งรหัสผ่านใหม่ได้ที่:\n${link}\n\nลิงก์ใช้ได้ 1 ชั่วโมงและใช้ได้ครั้งเดียว หากคุณไม่ได้ขอ กรุณาเพิกเฉยอีเมลนี้ รหัสผ่านของคุณจะไม่เปลี่ยน`,
   });
   res.json(answer);
 });
@@ -112,9 +112,9 @@ router.post("/api/auth/forgot-password", async (req, res) => {
 router.post("/api/auth/reset-password", (req, res) => {
   const { token, new_password, confirm_password } = req.body || {};
   const user = readResetToken(token);
-  if (!user) return res.status(400).json({ error: "This reset link is invalid, expired or already used" });
-  if (!new_password || new_password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
-  if (new_password !== confirm_password) return res.status(400).json({ error: "Passwords do not match" });
+  if (!user) return res.status(400).json({ error: "ลิงก์รีเซ็ตไม่ถูกต้อง หมดอายุ หรือถูกใช้ไปแล้ว" });
+  if (!new_password || new_password.length < 6) return res.status(400).json({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร" });
+  if (new_password !== confirm_password) return res.status(400).json({ error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" });
   // Opening the emailed link also proves the address belongs to the user. All sessions are signed out.
   db.prepare(
     "UPDATE users SET password_hash = ?, email_verified = 1, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?"
@@ -127,7 +127,7 @@ router.get("/api/auth/verify-email", (req, res) => {
   const p = readVerifyToken(req.query.token);
   const user = p && getUser(p.u);
   if (!user || user.email !== p.e) {
-    return res.redirect("/app#error=" + encodeURIComponent("Verification link is invalid or expired"));
+    return res.redirect("/app#error=" + encodeURIComponent("ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ"));
   }
   db.prepare("UPDATE users SET email_verified = 1 WHERE id = ?").run(user.id);
   res.redirect("/app#verified=1");
@@ -138,20 +138,20 @@ router.use("/api/profile", jwtAuth);
 
 router.get("/api/profile", (req, res) => {
   const u = getUser(req.user.id);
-  if (!u) return res.status(404).json({ error: "Account not found" });
+  if (!u) return res.status(404).json({ error: "ไม่พบบัญชีนี้" });
   res.json(profileOf(u));
 });
 
 router.patch("/api/profile/email", async (req, res) => {
   const u = getUser(req.user.id);
   const email = String((req.body || {}).email || "").trim().toLowerCase();
-  if (!EMAIL_RE.test(email) || email.length > 255) return res.status(400).json({ error: "Invalid email address" });
+  if (!EMAIL_RE.test(email) || email.length > 255) return res.status(400).json({ error: "รูปแบบอีเมลไม่ถูกต้อง" });
   if (isLocal(u) && !bcrypt.compareSync(String((req.body || {}).current_password || ""), u.password_hash)) {
-    return res.status(403).json({ error: "Current password is incorrect" });
+    return res.status(403).json({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง" });
   }
-  if (email === (u.email || "").toLowerCase()) return res.status(400).json({ error: "That is already your email" });
+  if (email === (u.email || "").toLowerCase()) return res.status(400).json({ error: "นี่คืออีเมลปัจจุบันของคุณอยู่แล้ว" });
   if (db.prepare("SELECT 1 FROM users WHERE lower(email) = ? AND id != ?").get(email, u.id)) {
-    return res.status(409).json({ error: "That email is already used by another account" });
+    return res.status(409).json({ error: "อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว" });
   }
   db.prepare("UPDATE users SET email = ?, email_verified = 0 WHERE id = ?").run(email, u.id);
   const updated = getUser(u.id);
@@ -162,10 +162,10 @@ router.patch("/api/profile/email", async (req, res) => {
 
 router.post("/api/profile/email/verify-request", async (req, res) => {
   const u = getUser(req.user.id);
-  if (!u.email) return res.status(400).json({ error: "Add an email address first" });
-  if (u.email_verified) return res.status(400).json({ error: "Email is already verified" });
+  if (!u.email) return res.status(400).json({ error: "กรุณาเพิ่มอีเมลก่อน" });
+  if (u.email_verified) return res.status(400).json({ error: "อีเมลนี้ยืนยันแล้ว" });
   if (Date.now() - (lastSent.get(u.id) || 0) < 60000) {
-    return res.status(429).json({ error: "Please wait a minute before requesting another email" });
+    return res.status(429).json({ error: "กรุณารอ 1 นาทีก่อนขออีเมลใหม่" });
   }
   lastSent.set(u.id, Date.now());
   const sent = await sendVerification(req, u);
@@ -174,14 +174,14 @@ router.post("/api/profile/email/verify-request", async (req, res) => {
 
 router.post("/api/profile/password", (req, res) => {
   const u = getUser(req.user.id);
-  if (!isLocal(u)) return res.status(400).json({ error: `This account signs in with ${u.provider}; it has no password` });
+  if (!isLocal(u)) return res.status(400).json({ error: `บัญชีนี้ล็อกอินด้วย ${u.provider} จึงไม่มีรหัสผ่าน` });
   const { current_password, new_password, confirm_password } = req.body || {};
   if (!bcrypt.compareSync(String(current_password || ""), u.password_hash)) {
     return res.status(403).json({ error: "Current password is incorrect" });
   }
-  if (!new_password || new_password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
-  if (new_password !== confirm_password) return res.status(400).json({ error: "Passwords do not match" });
-  if (new_password === current_password) return res.status(400).json({ error: "New password must differ from the current one" });
+  if (!new_password || new_password.length < 6) return res.status(400).json({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร" });
+  if (new_password !== confirm_password) return res.status(400).json({ error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" });
+  if (new_password === current_password) return res.status(400).json({ error: "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม" });
   // Bumping token_version signs every other session out; this one gets a fresh token.
   db.prepare("UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?").run(
     bcrypt.hashSync(new_password, 10),
@@ -204,10 +204,10 @@ const AVATAR_SIGNATURES = {
 };
 router.put("/api/profile/avatar", (req, res) => {
   const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).image || ""));
-  if (!m) return res.status(400).json({ error: "Use a PNG, JPEG or WebP image" });
+  if (!m) return res.status(400).json({ error: "รองรับเฉพาะรูป PNG, JPEG หรือ WebP" });
   const bytes = Buffer.from(m[2], "base64");
-  if (bytes.length > AVATAR_MAX_BYTES) return res.status(413).json({ error: "Image is too large (max 200 KB after resizing)" });
-  if (!AVATAR_SIGNATURES[m[1]](bytes)) return res.status(400).json({ error: "The file is not a valid image" });
+  if (bytes.length > AVATAR_MAX_BYTES) return res.status(413).json({ error: "รูปมีขนาดใหญ่เกินไป (สูงสุด 200 KB หลังย่อ)" });
+  if (!AVATAR_SIGNATURES[m[1]](bytes)) return res.status(400).json({ error: "ไฟล์นี้ไม่ใช่รูปภาพที่ถูกต้อง" });
   db.prepare("UPDATE users SET avatar = ? WHERE id = ?").run(`data:image/${m[1]};base64,${bytes.toString("base64")}`, req.user.id);
   res.json(profileOf(getUser(req.user.id)));
 });
@@ -224,10 +224,10 @@ router.post("/api/profile/logout-everywhere", (req, res) => {
 
 router.delete("/api/profile", (req, res) => {
   const u = getUser(req.user.id);
-  if (u.role === "admin") return res.status(403).json({ error: "Admin accounts cannot be deleted here" });
+  if (u.role === "admin") return res.status(403).json({ error: "ไม่สามารถลบบัญชีผู้ดูแลระบบจากหน้านี้ได้" });
   const { password, confirm_username } = req.body || {};
   const ok = isLocal(u) ? bcrypt.compareSync(String(password || ""), u.password_hash) : confirm_username === u.username;
-  if (!ok) return res.status(403).json({ error: isLocal(u) ? "Password is incorrect" : "Type your username to confirm" });
+  if (!ok) return res.status(403).json({ error: isLocal(u) ? "รหัสผ่านไม่ถูกต้อง" : "กรุณาพิมพ์ชื่อผู้ใช้ให้ถูกต้องเพื่อยืนยัน" });
   db.exec("BEGIN");
   try {
     const own = "(SELECT id FROM servers WHERE user_id = ?)";

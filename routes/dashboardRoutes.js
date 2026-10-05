@@ -20,7 +20,7 @@ router.get("/dashboard/analytics", (req, res) => {
   const base = [...sc.clauses];
   const baseParams = [...sc.params];
   if (server_id) {
-    if (!canAccessServerId(req, Number(server_id))) return res.status(404).json({ error: "Not found" });
+    if (!canAccessServerId(req, Number(server_id))) return res.status(404).json({ error: "ไม่พบข้อมูล" });
     base.push("l.server_id = ?");
     baseParams.push(Number(server_id));
   }

@@ -32,7 +32,7 @@ router.get("/incidents", (req, res) => {
 router.get("/incidents/:id", (req, res) => {
   const incident = db.prepare("SELECT * FROM incidents WHERE id = ?").get(req.params.id);
   if (!incident || !canAccessServerId(req, incident.server_id)) {
-    return res.status(404).json({ error: "Not found" });
+    return res.status(404).json({ error: "ไม่พบข้อมูล" });
   }
   res.json(incident);
 });
@@ -40,11 +40,11 @@ router.get("/incidents/:id", (req, res) => {
 router.patch("/incidents/:id/status", (req, res) => {
   const { status } = req.body || {};
   if (!["OPEN", "CLOSED", "RESOLVED"].includes(status)) {
-    return res.status(400).json({ error: "Invalid status" });
+    return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
   }
   const incident = db.prepare("SELECT * FROM incidents WHERE id = ?").get(req.params.id);
   if (!incident || !canAccessServerId(req, incident.server_id)) {
-    return res.status(404).json({ error: "Not found" });
+    return res.status(404).json({ error: "ไม่พบข้อมูล" });
   }
   db.prepare("UPDATE incidents SET status = ? WHERE id = ?").run(status, req.params.id);
   res.json(db.prepare("SELECT * FROM incidents WHERE id = ?").get(req.params.id));

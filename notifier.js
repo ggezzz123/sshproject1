@@ -42,12 +42,12 @@ function shouldAlert(risk, alreadyAlerted) {
 function formatMessage(incident) {
   const lines = [
     `[${incident.risk_level}] ${incident.title}`,
-    `Server: ${incident.server_hostname || "-"}`,
-    incident.source_ip ? `Source IP: ${incident.source_ip}` : null,
-    incident.username ? `Account: ${incident.username}` : null,
+    `เซิร์ฟเวอร์: ${incident.server_hostname || "-"}`,
+    incident.source_ip ? `IP ต้นทาง: ${incident.source_ip}` : null,
+    incident.username ? `บัญชี: ${incident.username}` : null,
     incident.description,
-    incident.verdict ? `Assessment: ${incident.verdict}` : null,
-    `Time: ${new Date().toISOString()}`,
+    incident.verdict ? `การประเมิน: ${incident.verdict}` : null,
+    `เวลา: ${new Date().toLocaleString("th-TH", { timeZone: process.env.ALERT_TZ || "Asia/Bangkok" })}`,
   ];
   return lines.filter(Boolean).join("\n");
 }

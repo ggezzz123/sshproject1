@@ -46,13 +46,13 @@ router.get("/my-servers", (req, res) => {
 
 router.get("/servers/:id", (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(req.params.id);
-  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "Not found" });
+  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "ไม่พบข้อมูล" });
   res.json(server);
 });
 
 router.post("/servers", (req, res) => {
   const { name, hostname, ip_address } = req.body || {};
-  if (!name) return res.status(400).json({ error: "name required" });
+  if (!name) return res.status(400).json({ error: "กรุณาตั้งชื่อเซิร์ฟเวอร์" });
   const api_key = generateApiKey();
   const info = db
     .prepare(
@@ -64,7 +64,7 @@ router.post("/servers", (req, res) => {
 
 router.post("/servers/:id/regenerate-key", (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(req.params.id);
-  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "Not found" });
+  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "ไม่พบข้อมูล" });
   const api_key = generateApiKey();
   db.prepare("UPDATE servers SET api_key = ? WHERE id = ?").run(api_key, server.id);
   res.json(db.prepare("SELECT * FROM servers WHERE id = ?").get(server.id));
@@ -72,8 +72,18 @@ router.post("/servers/:id/regenerate-key", (req, res) => {
 
 router.delete("/servers/:id", (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(req.params.id);
-  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "Not found" });
-  db.prepare("DELETE FROM servers WHERE id = ?").run(req.params.id);
+  if (!server || !canAccessServer(req, server)) return res.status(404).json({ error: "ไม่พบข้อมูล" });
+  // logs and incidents reference the server, so they go first (foreign keys are enforced)
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM ssh_logs WHERE server_id = ?").run(server.id);
+    db.prepare("DELETE FROM incidents WHERE server_id = ?").run(server.id);
+    db.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
   res.json({ status: "deleted" });
 });
 

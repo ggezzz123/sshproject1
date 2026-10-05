@@ -4,7 +4,12 @@
 $runner = Join-Path $PSScriptRoot "run-server.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runner`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+# At log-on, plus every 5 minutes as a watchdog: if the runner is already alive the extra start is ignored
+# (MultipleInstances IgnoreNew); if it died, this brings it back.
+$trigger = @(
+    (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650))
+)
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `
     -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)

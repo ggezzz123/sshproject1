@@ -47,7 +47,7 @@ function jwtAuth(req, res, next) {
     // Tokens die when the account is deleted or its token_version changes (password change / sign-out everywhere)
     const row = db.prepare("SELECT token_version FROM users WHERE id = ?").get(payload.id);
     if (!row || (row.token_version || 0) !== (payload.tv || 0)) {
-      return res.status(401).json({ error: "Session expired, please sign in again" });
+      return res.status(401).json({ error: "เซสชันหมดอายุ กรุณาล็อกอินใหม่" });
     }
     req.user = payload;
     next();
@@ -65,7 +65,7 @@ function signToken(user) {
 // Restricts a route (after jwtAuth) to admin accounts only
 function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== "admin") {
-    return res.status(403).json({ error: "Admin access required" });
+    return res.status(403).json({ error: "ต้องเป็นผู้ดูแลระบบเท่านั้น" });
   }
   next();
 }

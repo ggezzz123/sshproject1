@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Get API Key — SSH Monitor</title>
+  <title>รับ API Key - SSH Monitor</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <script src="/theme.js"></script>
   <script>
     // Logged-in users only: bounce to the dashboard login before anything renders.
@@ -25,7 +26,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
   <style>
     .key-box {
@@ -55,37 +56,38 @@
     .server-row .name { font-weight: 600; }
     .server-row .key { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .server-row .actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .gk-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
   </style>
 </head>
 <body>
   <div class="login-wrap">
-    <button type="button" class="theme-toggle floating" id="themeToggle" aria-label="Toggle light / dark mode"></button>
+    <button type="button" class="theme-toggle floating" id="themeToggle" aria-label="สลับโหมดสว่าง / มืด"></button>
     <div class="login-card" style="width: 460px;">
-      <div class="hint" style="margin: 0 0 12px;"><a href="/app">&larr; Back to Dashboard</a> &nbsp;·&nbsp; <a href="/">Home</a></div>
-      <h1>Get API Key</h1>
-      <div class="sub">Generate and manage API keys for your SSH servers</div>
+      <div class="hint" style="margin: 0 0 12px;"><a href="/app">&larr; กลับไปแดชบอร์ด</a> &nbsp;·&nbsp; <a href="/">หน้าแรก</a></div>
+      <h1>รับ API Key</h1>
+      <div class="sub">สร้างและจัดการ API key ของเซิร์ฟเวอร์ SSH ของคุณ</div>
 
       <div id="error" class="error-banner" style="display:none;"></div>
 
       <div id="keyView">
         <div class="field">
-          <label>Server name</label>
-          <input class="input" id="serverName" placeholder="e.g. web01" autocomplete="off" />
+          <label>ชื่อเซิร์ฟเวอร์</label>
+          <input class="input" id="serverName" placeholder="เช่น web01" autocomplete="off" />
         </div>
-        <button class="btn primary" id="generateBtn" style="width:100%;">Generate Key</button>
+        <button class="btn primary" id="generateBtn" style="width:100%;">สร้าง Key</button>
 
         <div id="newKeyBox" style="display:none; margin-top:16px;">
-          <label>New API key — copy it now</label>
+          <label>API key ใหม่ — คัดลอกเก็บไว้ตอนนี้</label>
           <div class="key-box" id="newKeyValue"></div>
-          <button class="btn secondary" id="copyNewKey" style="width:100%;">Copy Key</button>
-          <label style="margin-top:12px;">Install command</label>
+          <button class="btn secondary" id="copyNewKey" style="width:100%;">คัดลอก Key</button>
+          <label style="margin-top:12px;">คำสั่งติดตั้ง agent (รันบนเซิร์ฟเวอร์ Linux)</label>
           <div class="key-box" id="installCmd" style="color: var(--text-muted); font-size:11px;"></div>
         </div>
 
         <div id="myServers" style="margin-top:24px;"></div>
 
         <div class="hint" style="text-align:center;margin-top:16px;">
-          <a href="#" id="logoutLink">Log out</a>
+          <a href="#" id="logoutLink">ออกจากระบบ</a>
         </div>
       </div>
     </div>
@@ -98,7 +100,7 @@
 
     const themeBtn = document.getElementById("themeToggle");
     function renderThemeBtn() {
-      themeBtn.textContent = window.currentTheme() === "dark" ? "☀ Light mode" : "☾ Dark mode";
+      themeBtn.textContent = window.currentTheme() === "dark" ? "☀ โหมดสว่าง" : "☾ โหมดมืด";
     }
     themeBtn.addEventListener("click", () => { window.toggleTheme(); renderThemeBtn(); });
     renderThemeBtn();
@@ -121,7 +123,7 @@
       if (res.status === 401) {
         setToken(null);
         location.replace("/app?next=/get-key");
-        throw new Error("Session expired — please sign in again");
+        throw new Error("เซสชันหมดอายุ กรุณาล็อกอินใหม่");
       }
       if (!res.ok) {
         let msg = res.statusText;
@@ -134,15 +136,15 @@
     document.getElementById("generateBtn").addEventListener("click", async () => {
       hideError();
       const name = document.getElementById("serverName").value.trim();
-      if (!name) { showError("Server name is required"); return; }
+      if (!name) { showError("กรุณาตั้งชื่อเซิร์ฟเวอร์"); return; }
       const btn = document.getElementById("generateBtn");
       btn.disabled = true;
-      btn.textContent = "Generating...";
+      btn.textContent = "กำลังสร้าง...";
       try {
         const server = await api("/api/servers", { method: "POST", body: JSON.stringify({ name }) });
         document.getElementById("newKeyValue").textContent = server.api_key;
         document.getElementById("installCmd").textContent =
-          `curl -sSL ${backendOrigin}/install.sh | sudo bash -s -- ${backendOrigin}/api/logs ${server.api_key}`;
+          `curl -sSL ${backendOrigin}/install.sh | sudo MONITOR_API_KEY=${server.api_key} bash -s -- ${backendOrigin}/api/logs`;
         document.getElementById("newKeyBox").style.display = "block";
         document.getElementById("serverName").value = "";
         loadMyServers();
@@ -150,15 +152,15 @@
         showError(e.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "Generate Key";
+        btn.textContent = "สร้าง Key";
       }
     });
 
     document.getElementById("copyNewKey").addEventListener("click", () => {
       navigator.clipboard.writeText(document.getElementById("newKeyValue").textContent).then(() => {
         const b = document.getElementById("copyNewKey");
-        b.textContent = "Copied!";
-        setTimeout(() => (b.textContent = "Copy Key"), 1500);
+        b.textContent = "คัดลอกแล้ว!";
+        setTimeout(() => (b.textContent = "คัดลอก Key"), 1500);
       });
     });
 
@@ -176,14 +178,14 @@
 
     async function loadMyServers() {
       const container = document.getElementById("myServers");
-      container.innerHTML = '<div class="hint">Loading your servers…</div>';
+      container.innerHTML = '<div class="hint">กำลังโหลดเซิร์ฟเวอร์ของคุณ…</div>';
       try {
         const servers = await api("/api/my-servers");
         if (!servers.length) {
-          container.innerHTML = '<div class="hint">No servers yet — generate your first key above.</div>';
+          container.innerHTML = '<div class="hint">ยังไม่มีเซิร์ฟเวอร์ — สร้าง key แรกได้ด้านบน</div>';
           return;
         }
-        container.innerHTML = "<label>Your servers</label>";
+        container.innerHTML = "<label>เซิร์ฟเวอร์ของคุณ</label>";
         servers.forEach((s) => {
           const row = document.createElement("div");
           row.className = "card server-row";
@@ -197,19 +199,19 @@
 
           const copyBtn = document.createElement("button");
           copyBtn.className = "btn ghost sm";
-          copyBtn.textContent = "Copy";
+          copyBtn.textContent = "คัดลอก";
           copyBtn.addEventListener("click", () => {
             navigator.clipboard.writeText(s.api_key).then(() => {
-              copyBtn.textContent = "Copied!";
-              setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+              copyBtn.textContent = "คัดลอกแล้ว!";
+              setTimeout(() => (copyBtn.textContent = "คัดลอก"), 1500);
             });
           });
 
           const regenBtn = document.createElement("button");
           regenBtn.className = "btn ghost sm";
-          regenBtn.textContent = "Regenerate";
+          regenBtn.textContent = "สร้างใหม่";
           regenBtn.addEventListener("click", async () => {
-            if (!confirm(`Regenerate key for "${s.name}"? The old key will stop working immediately.`)) return;
+            if (!confirm(`สร้าง key ใหม่ให้ "${s.name}"? key เดิมจะใช้ไม่ได้ทันที`)) return;
             try {
               await api(`/api/servers/${s.id}/regenerate-key`, { method: "POST" });
               loadMyServers();
@@ -218,8 +220,23 @@
             }
           });
 
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn ghost sm danger";
+          delBtn.textContent = "ลบ";
+          delBtn.addEventListener("click", async () => {
+            if (!confirm(`ลบ key และเซิร์ฟเวอร์ "${s.name}"?\n\nagent ที่ใช้ key นี้จะส่ง log ไม่ได้อีก และ log กับเหตุการณ์ของเครื่องนี้จะถูกลบถาวร`)) return;
+            try {
+              await api(`/api/servers/${s.id}`, { method: "DELETE" });
+              document.getElementById("newKeyBox").style.display = "none";
+              loadMyServers();
+            } catch (e) {
+              showError(e.message);
+            }
+          });
+
           actions.appendChild(copyBtn);
           actions.appendChild(regenBtn);
+          actions.appendChild(delBtn);
           row.appendChild(meta);
           row.appendChild(actions);
           container.appendChild(row);

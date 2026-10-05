@@ -15,7 +15,7 @@ const TOKEN_KEY = "ssh_monitor_token";
 const FLASH = (() => {
   if (/[#&]verified=1/.test(location.hash)) {
     history.replaceState(null, "", location.pathname + location.search);
-    return "Email verified. Thank you!";
+    return "ยืนยันอีเมลเรียบร้อยแล้ว ขอบคุณครับ";
   }
   return "";
 })();
@@ -51,7 +51,7 @@ async function api(path, opts = {}) {
   const res = await fetch(url, { ...opts, headers });
   if (res.status === 401) {
     setToken(null);
-    throw new Error("Unauthorized");
+    throw new Error("กรุณาล็อกอินใหม่");
   }
   if (!res.ok) {
     let msg = res.statusText;
@@ -70,21 +70,24 @@ const SEVERITY_CHIP = {
 };
 
 const EVENT_LABEL = {
-  ssh_login_success: "Login Success",
-  ssh_login_failed: "Login Failed",
-  ssh_invalid_user: "Invalid User",
-  sudo_command: "Sudo Command",
-  session_closed: "Session Closed",
-  connection_closed_preauth: "Conn Closed (preauth)",
+  ssh_login_success: "ล็อกอินสำเร็จ",
+  ssh_login_failed: "ล็อกอินไม่สำเร็จ",
+  ssh_invalid_user: "ไม่มีชื่อผู้ใช้นี้",
+  sudo_command: "ใช้คำสั่ง sudo",
+  session_closed: "ปิดเซสชัน",
+  connection_closed_preauth: "ตัดการเชื่อมต่อก่อนล็อกอิน",
 };
 
 function Chip({ kind, children }) {
   return <span className={"chip " + (kind || "muted")}>{children}</span>;
 }
 
+const RISK_TH = { CRITICAL: "วิกฤต", HIGH: "สูง", MEDIUM: "ปานกลาง", LOW: "ต่ำ" };
+const STATUS_TH = { OPEN: "เปิดอยู่", RESOLVED: "แก้ไขแล้ว", CLOSED: "ปิดแล้ว" };
+const SEVERITY_TH = { info: "ข้อมูล", low: "ต่ำ", warning: "เตือน", high: "สูง", critical: "วิกฤต" };
 function riskChip(level) {
   const map = { CRITICAL: "critical", HIGH: "high", MEDIUM: "medium", LOW: "low" };
-  return <Chip kind={map[level] || "muted"}>{level}</Chip>;
+  return <Chip kind={map[level] || "muted"}>{RISK_TH[level] || level}</Chip>;
 }
 
 function fmtTime(s) {
@@ -92,7 +95,7 @@ function fmtTime(s) {
   // SQLite datetime('now') is UTC but has no zone suffix; mark it as UTC.
   const d = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? s.replace(" ", "T") + "Z" : s);
   if (isNaN(d)) return s;
-  return d.toLocaleString();
+  return d.toLocaleString("th-TH");
 }
 
 function ThemeToggle({ floating }) {
@@ -102,9 +105,9 @@ function ThemeToggle({ floating }) {
       type="button"
       className={"theme-toggle" + (floating ? " floating" : "")}
       onClick={() => setTheme(window.toggleTheme())}
-      aria-label="Toggle light / dark mode"
+      aria-label="สลับโหมดสว่าง / มืด"
     >
-      {theme === "dark" ? "☀ Light mode" : "☾ Dark mode"}
+      {theme === "dark" ? "☀ โหมดสว่าง" : "☾ โหมดมืด"}
     </button>
   );
 }
@@ -139,8 +142,8 @@ function Captcha({ cfg, onChange }) {
   if (!cfg.challenge) return null;
   return (
     <div className="field">
-      <label>I'm not a robot: {cfg.challenge.question}</label>
-      <input className="input" inputMode="numeric" placeholder="Answer"
+      <label>ยืนยันว่าไม่ใช่บอท: {cfg.challenge.question}</label>
+      <input className="input" inputMode="numeric" placeholder="คำตอบ"
         onChange={(e) => onChange({ captcha_token: cfg.challenge.token, captcha_answer: e.target.value })} />
     </div>
   );
@@ -172,7 +175,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
     setError("");
     setInfo("");
     if ((mode === "register" || mode === "reset") && password !== confirm) {
-      setError("Passwords do not match");
+      setError("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
       return;
     }
     setLoading(true);
@@ -180,8 +183,8 @@ function Login({ onLogin, resetToken, onResetDone }) {
       if (mode === "forgot") {
         const d = await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ identifier }) });
         setInfo(d.mail_configured
-          ? "If an account with that email or username exists, a reset link has been sent. Check your inbox (and spam)."
-          : "Email is not set up on this server yet, so no reset link can be sent. Ask the administrator.");
+          ? "ถ้ามีบัญชีที่ใช้อีเมลหรือชื่อผู้ใช้นี้ ระบบได้ส่งลิงก์รีเซ็ตไปแล้ว กรุณาตรวจกล่องจดหมาย (และโฟลเดอร์สแปม)"
+          : "เซิร์ฟเวอร์นี้ยังไม่ได้ตั้งค่าการส่งอีเมล จึงส่งลิงก์รีเซ็ตไม่ได้ กรุณาติดต่อผู้ดูแลระบบ");
         return;
       }
       if (mode === "reset") {
@@ -189,7 +192,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
           body: JSON.stringify({ token: resetToken, new_password: password, confirm_password: confirm }) });
         setPassword(""); setConfirm(""); setUsername(d.username || "");
         setMode("login");
-        setInfo("Password changed. Sign in with your new password.");
+        setInfo("เปลี่ยนรหัสผ่านแล้ว กรุณาล็อกอินด้วยรหัสผ่านใหม่");
         onResetDone && onResetDone();
         return;
       }
@@ -200,7 +203,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
       setToken(data.token);
       onLogin(data.user);
     } catch (err) {
-      setError(err.message === "Unauthorized" && mode === "login" ? "Wrong username or password" : err.message);
+      setError(err.message === "กรุณาล็อกอินใหม่" && mode === "login" ? "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" : err.message);
       if (mode === "register") loadConfig(); // challenges are single-use
     } finally {
       setLoading(false);
@@ -210,7 +213,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
   function switchMode(m) { setMode(m); setError(""); setInfo(""); loadConfig(); }
   const link = (m, text) => <a href="#" onClick={(e) => { e.preventDefault(); switchMode(m); }}>{text}</a>;
   const oauthLabel = { google: "Google", github: "GitHub" };
-  const title = { login: "Sign In", register: "Create Account", forgot: "Send reset link", reset: "Set new password" }[mode];
+  const title = { login: "เข้าสู่ระบบ", register: "สมัครสมาชิก", forgot: "ส่งลิงก์รีเซ็ตรหัสผ่าน", reset: "ตั้งรหัสผ่านใหม่" }[mode];
 
   return (
     <div className="login-wrap">
@@ -218,66 +221,66 @@ function Login({ onLogin, resetToken, onResetDone }) {
       <form className="login-card" onSubmit={submit}>
         <h1>SSH Monitor</h1>
         <div className="sub">
-          {mode === "forgot" ? "Forgot your password? We'll email you a reset link"
-            : mode === "reset" ? "Choose a new password"
+          {mode === "forgot" ? "ลืมรหัสผ่าน? เราจะส่งลิงก์รีเซ็ตไปทางอีเมล"
+            : mode === "reset" ? "ตั้งรหัสผ่านใหม่"
             : new URLSearchParams(location.search).get("next") === "/get-key"
-            ? "Sign in or register to get your API key"
-            : "Security monitoring system"}
+            ? "เข้าสู่ระบบหรือสมัครสมาชิกเพื่อรับ API key"
+            : "ระบบเฝ้าระวังความปลอดภัย SSH"}
         </div>
         {info && <div className="ok-banner">{info}</div>}
         {error && <div className="error-banner">{error}</div>}
         {mode === "forgot" && (
           <div className="field">
-            <label>Email or username</label>
+            <label>อีเมลหรือชื่อผู้ใช้</label>
             <input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoFocus required />
           </div>
         )}
         {(mode === "login" || mode === "register") && (
           <div className="field">
-            <label>Username</label>
+            <label>ชื่อผู้ใช้</label>
             <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
           </div>
         )}
         {mode === "register" && (
           <div className="field">
-            <label>Email (optional, needed to reset a forgotten password)</label>
+            <label>อีเมล (ไม่บังคับ แต่ต้องมีถ้าจะรีเซ็ตรหัสผ่านเมื่อลืม)</label>
             <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
         )}
         {mode !== "forgot" && (
           <div className="field">
             <label style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{mode === "reset" ? "New password (min 6 characters)" : "Password"}</span>
-              {mode === "login" && <span style={{ fontWeight: 400 }}>{link("forgot", "Forgot password?")}</span>}
+              <span>{mode === "reset" ? "รหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)" : "รหัสผ่าน"}</span>
+              {mode === "login" && <span style={{ fontWeight: 400 }}>{link("forgot", "ลืมรหัสผ่าน?")}</span>}
             </label>
             <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={mode === "reset"} />
           </div>
         )}
         {(mode === "register" || mode === "reset") && (
           <div className="field">
-            <label>Confirm password</label>
+            <label>ยืนยันรหัสผ่าน</label>
             <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </div>
         )}
         {mode === "register" && <Captcha key={cfg.challenge ? cfg.challenge.token : "ts"} cfg={cfg} onChange={setCaptcha} />}
         <button className="btn primary" style={{ width: "100%" }} disabled={loading}>
-          {loading ? "Please wait..." : title}
+          {loading ? "กรุณารอสักครู่..." : title}
         </button>
         {(mode === "login" || mode === "register") && cfg.providers.length > 0 && (
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>or</div>
+            <div style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>หรือ</div>
             {cfg.providers.map((p) => (
               <a key={p} className="btn" style={{ width: "100%", textAlign: "center", boxSizing: "border-box" }}
                 href={API_CONFIG.BACKEND_URL + "/api/auth/oauth/" + p}>
-                {mode === "login" ? "Sign in" : "Sign up"} with {oauthLabel[p]}
+                {mode === "login" ? "เข้าสู่ระบบ" : "สมัคร"}ด้วย {oauthLabel[p]}
               </a>
             ))}
           </div>
         )}
         <div style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-          {mode === "login" ? <>No account? {link("register", "Register")}</>
-            : mode === "register" ? <>Already have an account? {link("login", "Sign in")}</>
-            : <>{link("login", "Back to sign in")}</>}
+          {mode === "login" ? <>ยังไม่มีบัญชี? {link("register", "สมัครสมาชิก")}</>
+            : mode === "register" ? <>มีบัญชีอยู่แล้ว? {link("login", "เข้าสู่ระบบ")}</>
+            : <>{link("login", "กลับไปหน้าเข้าสู่ระบบ")}</>}
         </div>
       </form>
     </div>
@@ -286,17 +289,17 @@ function Login({ onLogin, resetToken, onResetDone }) {
 
 /* ---------- Analytics helpers ---------- */
 const ATTACK_LABEL = {
-  brute_force: "Brute force",
-  brute_force_success: "Login after many failures",
-  password_spraying: "Password spraying",
-  credential_stuffing: "Credential stuffing",
-  compromised_account: "Compromised account reuse",
-  username_enumeration: "Username enumeration",
-  ssh_scanning: "SSH scanning",
-  abnormal_burst: "Abnormal burst",
-  new_source_login: "Login from new source",
-  cross_host: "Cross-host campaign",
-  post_compromise: "Post-compromise activity",
+  brute_force: "เดารหัสผ่าน (Brute force)",
+  brute_force_success: "ล็อกอินสำเร็จหลังเดารหัสหลายครั้ง",
+  password_spraying: "ลองรหัสเดียวกับหลายบัญชี",
+  credential_stuffing: "ใช้รหัสที่รั่วไหล",
+  compromised_account: "บัญชีที่ถูกเจาะถูกใช้ซ้ำ",
+  username_enumeration: "สุ่มเดาชื่อผู้ใช้",
+  ssh_scanning: "สแกน SSH",
+  abnormal_burst: "เชื่อมต่อถี่ผิดปกติ",
+  new_source_login: "ล็อกอินจากแหล่งใหม่",
+  cross_host: "โจมตีหลายเซิร์ฟเวอร์",
+  post_compromise: "ใช้สิทธิ์สูงหลังถูกเจาะ",
 };
 
 // Status colors always travel with an icon + label (never color alone)
@@ -307,16 +310,16 @@ const RISK_META = [
   { key: "LOW", icon: "✓", color: "var(--status-good)" },
 ];
 const SEVERITIES = [
-  { key: "info", label: "Info", color: "var(--viz-ord-1)" },
-  { key: "low", label: "Low", color: "var(--viz-ord-2)" },
-  { key: "warning", label: "Warning", color: "var(--viz-ord-3)" },
-  { key: "high", label: "High", color: "var(--viz-ord-4)" },
+  { key: "info", label: "ข้อมูล", color: "var(--viz-ord-1)" },
+  { key: "low", label: "ต่ำ", color: "var(--viz-ord-2)" },
+  { key: "warning", label: "เตือน", color: "var(--viz-ord-3)" },
+  { key: "high", label: "สูง", color: "var(--viz-ord-4)" },
 ];
-const RANGE_LABEL = { "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days", all: "All time" };
-const PREV_LABEL = { "24h": "previous 24h", "7d": "previous 7 days", "30d": "previous 30 days" };
+const RANGE_LABEL = { "24h": "24 ชั่วโมงล่าสุด", "7d": "7 วันล่าสุด", "30d": "30 วันล่าสุด", all: "ทั้งหมด" };
+const PREV_LABEL = { "24h": "24 ชม. ก่อนหน้า", "7d": "7 วันก่อนหน้า", "30d": "30 วันก่อนหน้า" };
 
 const regionNames = (() => {
-  try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { return null; }
+  try { return new Intl.DisplayNames(["th"], { type: "region" }); } catch (e) { return null; }
 })();
 function countryName(code) {
   try { return (regionNames && regionNames.of(code)) || code; } catch (e) { return code; }
@@ -326,7 +329,7 @@ function fmtNum(n) {
   if (n == null) return "-";
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
   if (Math.abs(n) >= 1e4) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
-  return n.toLocaleString();
+  return n.toLocaleString("th-TH");
 }
 function pct(part, total) {
   return total ? ((part / total) * 100).toFixed(1) + "%" : "0%";
@@ -340,8 +343,8 @@ function niceStep(raw) {
 }
 function bucketLabel(t, bucketMs, long) {
   const d = new Date(t);
-  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const day = d.toLocaleDateString([], { day: "numeric", month: "short" });
+  const hm = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  const day = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
   if (bucketMs < 86400000) return long ? `${day} ${hm}` : bucketMs <= 3600000 ? hm : `${day} ${hm}`;
   return day;
 }
@@ -383,9 +386,9 @@ function ChartCard({ title, sub, className, table, children }) {
           {sub && <div className="sub">{sub}</div>}
         </div>
         {table && (
-          <div className="viz-toggle" role="group" aria-label={title + " view"}>
-            <button type="button" className={view === "chart" ? "on" : ""} aria-pressed={view === "chart"} onClick={() => setView("chart")}>Chart</button>
-            <button type="button" className={view === "table" ? "on" : ""} aria-pressed={view === "table"} onClick={() => setView("table")}>Table</button>
+          <div className="viz-toggle" role="group" aria-label={"มุมมอง " + title}>
+            <button type="button" className={view === "chart" ? "on" : ""} aria-pressed={view === "chart"} onClick={() => setView("chart")}>กราฟ</button>
+            <button type="button" className={view === "table" ? "on" : ""} aria-pressed={view === "table"} onClick={() => setView("table")}>ตาราง</button>
           </div>
         )}
       </div>
@@ -395,7 +398,7 @@ function ChartCard({ title, sub, className, table, children }) {
 }
 
 function VizTable({ columns, rows }) {
-  if (!rows.length) return <div className="viz-empty">No data for this filter</div>;
+  if (!rows.length) return <div className="viz-empty">ไม่มีข้อมูลตามตัวกรองนี้</div>;
   return (
     <div className="table-wrap">
       <table className="viz-table">
@@ -449,10 +452,10 @@ function Donut({ data, centerLabel }) {
   const tipFor = (d) => (
     <>
       <div className="r"><span className="sw" style={{ background: d.color }} />{d.label}<b>{fmtNum(d.value)}</b></div>
-      <div className="t">{pct(d.value, total)} of {fmtNum(total)}</div>
+      <div className="t">{pct(d.value, total)} จาก {fmtNum(total)}</div>
     </>
   );
-  if (!total) return <div className="viz-empty">No events for this filter</div>;
+  if (!total) return <div className="viz-empty">ไม่มีเหตุการณ์ตามตัวกรองนี้</div>;
   return (
     <div className="donut-wrap">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${centerLabel}: ${data.map((d) => `${d.label} ${d.value}`).join(", ")}`}>
@@ -484,7 +487,7 @@ function Donut({ data, centerLabel }) {
 function HBars({ data, color, unit, onSelect, empty, hint }) {
   const [tip, show, hide] = useTip();
   const max = Math.max(1, ...data.map((d) => d.value));
-  if (!data.length) return <div className="viz-empty">{empty || "Nothing to show"}</div>;
+  if (!data.length) return <div className="viz-empty">{empty || "ไม่มีข้อมูล"}</div>;
   return (
     <div className="hbars">
       {data.map((d) => {
@@ -492,7 +495,7 @@ function HBars({ data, color, unit, onSelect, empty, hint }) {
           <>
             <div className="r"><span className="sw" style={{ background: color }} />{d.label}<b>{fmtNum(d.value)} {unit}</b></div>
             {d.meta && <div className="t">{d.meta}</div>}
-            {onSelect && <div className="t">{hint || "Click to analyze"}</div>}
+            {onSelect && <div className="t">{hint || "คลิกเพื่อวิเคราะห์"}</div>}
           </>
         );
         return (
@@ -541,7 +544,7 @@ function LineChart({ points, series, bucketMs }) {
         {series.map((s) => <span key={s.key}><span className="sw line" style={{ background: s.color }} />{s.label}</span>)}
       </div>
       <svg className="linechart" width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-        aria-label={`${series.map((s) => s.label).join(" and ")} over time`}
+        aria-label={`${series.map((s) => s.label).join(" และ ")} ตามเวลา`}
         onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
         {[0, 1, 2, 3, 4].map((k) => (
           <g key={k}>
@@ -584,15 +587,15 @@ function LineChart({ points, series, bucketMs }) {
 function RiskRows({ data }) {
   const [tip, show, hide] = useTip();
   const total = RISK_META.reduce((s, r) => s + (data[r.key] || 0), 0);
-  if (!total) return <div className="viz-empty">No incidents in this period</div>;
+  if (!total) return <div className="viz-empty">ไม่มีเหตุการณ์ในช่วงนี้</div>;
   return (
     <div className="risk-rows">
       {RISK_META.map((r) => {
         const v = data[r.key] || 0;
-        const content = <div className="r"><span className="sw" style={{ background: r.color }} />{r.key}<b>{v} · {pct(v, total)}</b></div>;
+        const content = <div className="r"><span className="sw" style={{ background: r.color }} />{RISK_TH[r.key]}<b>{v} · {pct(v, total)}</b></div>;
         return (
           <div key={r.key} className="risk-row" tabIndex={0} onMouseMove={(e) => show(e, content)} onMouseLeave={hide} onFocus={(e) => show(e, content)} onBlur={hide}>
-            <span className="rl"><i style={{ color: r.color }} aria-hidden="true">{r.icon}</i>{r.key}</span>
+            <span className="rl"><i style={{ color: r.color }} aria-hidden="true">{r.icon}</i>{RISK_TH[r.key]}</span>
             <span className="bar"><span style={{ width: `${(v / total) * 100}%`, background: r.color }} /></span>
             <span className="n">{v}</span>
             <span className="p">{pct(v, total)}</span>
@@ -617,30 +620,30 @@ function AnalysisModal({ ip, onClose }) {
   const meta = data && RISK_META.find((r) => r.key === data.verdict.risk);
   return (
     <div className="modal-back" onClick={onClose}>
-      <aside className="modal-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={"Analysis of " + ip}>
+      <aside className="modal-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={"ผลวิเคราะห์ " + ip}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div className="sub" style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>SOURCE IP ANALYSIS</div>
+            <div className="sub" style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>วิเคราะห์ IP ต้นทาง</div>
             <h2 style={{ fontFamily: "var(--font-mono)" }}>{ip}</h2>
           </div>
-          <button className="btn ghost" onClick={onClose} aria-label="Close">✕</button>
+          <button className="btn ghost" onClick={onClose} aria-label="ปิด">✕</button>
         </div>
         {error && <div className="error-banner">{error}</div>}
-        {!data && !error && <div className="empty">Analyzing…</div>}
+        {!data && !error && <div className="empty">กำลังวิเคราะห์…</div>}
         {data && (
           <>
             <div className="verdict" style={{ "--vc": meta ? meta.color : undefined }}>
-              <div className="vr"><span style={{ color: meta && meta.color }} aria-hidden="true">{meta && meta.icon}</span>{data.verdict.risk} · Assessment</div>
+              <div className="vr"><span style={{ color: meta && meta.color }} aria-hidden="true">{meta && meta.icon}</span>{RISK_TH[data.verdict.risk] || data.verdict.risk} · ผลการประเมิน</div>
               <div className="vt">{data.verdict.text}</div>
             </div>
             <div className="mini-stats">
-              <div className="card"><div className="l">Events (24h)</div><div className="v">{fmtNum(data.events)}</div></div>
-              <div className="card"><div className="l">Servers</div><div className="v">{data.hosts.length}</div></div>
-              <div className="card"><div className="l">Accounts tried</div><div className="v">{data.users.length}</div></div>
+              <div className="card"><div className="l">เหตุการณ์ (24 ชม.)</div><div className="v">{fmtNum(data.events)}</div></div>
+              <div className="card"><div className="l">เซิร์ฟเวอร์</div><div className="v">{data.hosts.length}</div></div>
+              <div className="card"><div className="l">บัญชีที่ถูกลอง</div><div className="v">{data.users.length}</div></div>
             </div>
             {data.sequence.length > 0 && (
               <div>
-                <h4 style={{ marginBottom: 8 }}>Attack sequence</h4>
+                <h4 style={{ marginBottom: 8 }}>ลำดับการโจมตี</h4>
                 <div className="seq">
                   {data.sequence.map((s, i) => (
                     <React.Fragment key={i}>
@@ -652,14 +655,14 @@ function AnalysisModal({ ip, onClose }) {
               </div>
             )}
             {data.hosts.length > 0 && (
-              <div><h4 style={{ marginBottom: 8 }}>Targeted servers</h4><div className="seq">{data.hosts.map((h) => <span key={h} className="ph mono">{h}</span>)}</div></div>
+              <div><h4 style={{ marginBottom: 8 }}>เซิร์ฟเวอร์ที่ถูกโจมตี</h4><div className="seq">{data.hosts.map((h) => <span key={h} className="ph mono">{h}</span>)}</div></div>
             )}
             {data.users.length > 0 && (
-              <div><h4 style={{ marginBottom: 8 }}>Accounts</h4><div className="seq">{data.users.map((u) => <span key={u.user} className="ph">{u.user}<small>×{u.count}</small></span>)}</div></div>
+              <div><h4 style={{ marginBottom: 8 }}>บัญชี</h4><div className="seq">{data.users.map((u) => <span key={u.user} className="ph">{u.user}<small>×{u.count}</small></span>)}</div></div>
             )}
             {data.incidents.length > 0 && (
               <div>
-                <h4 style={{ marginBottom: 8 }}>Detected patterns</h4>
+                <h4 style={{ marginBottom: 8 }}>รูปแบบที่ตรวจพบ</h4>
                 <div className="card" style={{ padding: "4px 8px" }}>
                   <table className="viz-table">
                     <tbody>
@@ -677,7 +680,7 @@ function AnalysisModal({ ip, onClose }) {
             )}
             {data.timeline.length > 0 && (
               <div>
-                <h4 style={{ marginBottom: 8 }}>Timeline (latest {data.timeline.length})</h4>
+                <h4 style={{ marginBottom: 8 }}>ไทม์ไลน์ ({data.timeline.length} รายการล่าสุด)</h4>
                 <div className="timeline">
                   {[...data.timeline].reverse().map((e, i) => (
                     <div key={i} className="ev">
@@ -698,19 +701,19 @@ function AnalysisModal({ ip, onClose }) {
 
 /* ---------- Dashboard ---------- */
 const KPIS = [
-  { key: "total", label: "Total events", up: null },
-  { key: "failed", label: "Failed logins", up: "bad" },
-  { key: "success", label: "Successful logins", up: null },
-  { key: "attackers", label: "Attacker IPs", up: "bad" },
+  { key: "total", label: "เหตุการณ์ทั้งหมด", up: null },
+  { key: "failed", label: "ล็อกอินไม่สำเร็จ", up: "bad" },
+  { key: "success", label: "ล็อกอินสำเร็จ", up: null },
+  { key: "attackers", label: "IP ผู้โจมตี", up: "bad" },
 ];
 const DEFAULT_FILTERS = { range: "24h", server_id: "", severity: "", event_type: "" };
 
 function Delta({ cur, prev, up, range }) {
   if (prev == null) return <span>{RANGE_LABEL[range]}</span>;
-  if (!prev) return <span>{cur ? <b>new</b> : "no change"} vs {PREV_LABEL[range]}</span>;
+  if (!prev) return <span>{cur ? <b>ใหม่</b> : "ไม่เปลี่ยนแปลง"} เทียบกับ {PREV_LABEL[range]}</span>;
   const d = ((cur - prev) / prev) * 100;
   const cls = !up || Math.abs(d) < 0.05 ? "" : (d > 0) === (up === "good") ? "good" : "bad";
-  return <span><b className={cls}>{d > 0 ? "▲" : d < 0 ? "▼" : ""} {Math.abs(d).toFixed(1)}%</b> vs {PREV_LABEL[range]}</span>;
+  return <span><b className={cls}>{d > 0 ? "▲" : d < 0 ? "▼" : ""} {Math.abs(d).toFixed(1)}%</b> เทียบกับ {PREV_LABEL[range]}</span>;
 }
 
 function Dashboard() {
@@ -744,41 +747,41 @@ function Dashboard() {
   return (
     <div>
       <div className="page-title">
-        <h1>Dashboard</h1>
-        <div className="sub">SSH security analytics · {RANGE_LABEL[filters.range]} · auto-refresh 30s</div>
+        <h1>แดชบอร์ด</h1>
+        <div className="sub">วิเคราะห์ความปลอดภัย SSH · {RANGE_LABEL[filters.range]} · อัปเดตอัตโนมัติทุก 30 วินาที</div>
       </div>
       <div className="dash">
-        <aside className="card dash-filters" aria-label="Filters">
-          <h3><span aria-hidden="true">⚲</span> Filter</h3>
+        <aside className="card dash-filters" aria-label="ตัวกรอง">
+          <h3><span aria-hidden="true">⚲</span> ตัวกรอง</h3>
           <div>
-            <label htmlFor="f-range">Time range</label>
+            <label htmlFor="f-range">ช่วงเวลา</label>
             <select id="f-range" className="input" value={filters.range} onChange={set("range")}>
               {Object.entries(RANGE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor="f-server">Server</label>
+            <label htmlFor="f-server">เซิร์ฟเวอร์</label>
             <select id="f-server" className="input" value={filters.server_id} onChange={set("server_id")}>
-              <option value="">All servers</option>
+              <option value="">ทุกเซิร์ฟเวอร์</option>
               {(data ? data.servers : []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor="f-sev">Severity</label>
+            <label htmlFor="f-sev">ความรุนแรง</label>
             <select id="f-sev" className="input" value={filters.severity} onChange={set("severity")}>
-              <option value="">All</option>
+              <option value="">ทั้งหมด</option>
               {SEVERITIES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor="f-type">Event type</label>
+            <label htmlFor="f-type">ประเภทเหตุการณ์</label>
             <select id="f-type" className="input" value={filters.event_type} onChange={set("event_type")}>
-              <option value="">All</option>
+              <option value="">ทั้งหมด</option>
               {Object.entries(EVENT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <button className="btn primary" style={{ width: "100%" }} onClick={() => setFilters(DEFAULT_FILTERS)}>Reset filter</button>
-          <div className="meta">{data ? `${data.servers.length} server(s) in scope` : ""}</div>
+          <button className="btn primary" style={{ width: "100%" }} onClick={() => setFilters(DEFAULT_FILTERS)}>ล้างตัวกรอง</button>
+          <div className="meta">{data ? `ครอบคลุม ${data.servers.length} เซิร์ฟเวอร์` : ""}</div>
         </aside>
 
         <div className={"dash-main" + (loading && data ? " loading" : "")}>
@@ -794,89 +797,89 @@ function Dashboard() {
           </div>
 
           <div className="viz-grid">
-            <ChartCard className="span-4" title="Login outcomes" sub="Share of all SSH events"
-              table={{ columns: [{ key: "label", label: "Outcome" }, { key: "value", label: "Events", num: true }],
-                rows: [{ label: "Successful", value: cur.success || 0 }, { label: "Failed", value: cur.failed || 0 }, { label: "Other", value: other }] }}>
-              <Donut centerLabel="events" data={[
-                { key: "success", label: "Successful", value: cur.success || 0, color: "var(--viz-1)" },
-                { key: "failed", label: "Failed", value: cur.failed || 0, color: "var(--viz-2)" },
-                { key: "other", label: "Other", value: other, color: "var(--viz-3)" },
+            <ChartCard className="span-4" title="ผลการล็อกอิน" sub="สัดส่วนจากเหตุการณ์ SSH ทั้งหมด"
+              table={{ columns: [{ key: "label", label: "ผลลัพธ์" }, { key: "value", label: "เหตุการณ์", num: true }],
+                rows: [{ label: "สำเร็จ", value: cur.success || 0 }, { label: "ไม่สำเร็จ", value: cur.failed || 0 }, { label: "อื่น ๆ", value: other }] }}>
+              <Donut centerLabel="เหตุการณ์" data={[
+                { key: "success", label: "สำเร็จ", value: cur.success || 0, color: "var(--viz-1)" },
+                { key: "failed", label: "ไม่สำเร็จ", value: cur.failed || 0, color: "var(--viz-2)" },
+                { key: "other", label: "อื่น ๆ", value: other, color: "var(--viz-3)" },
               ]} />
             </ChartCard>
 
-            <ChartCard className="span-4" title="Events by type"
-              table={{ columns: [{ key: "label", label: "Event" }, { key: "value", label: "Count", num: true }],
+            <ChartCard className="span-4" title="เหตุการณ์ตามประเภท"
+              table={{ columns: [{ key: "label", label: "เหตุการณ์" }, { key: "value", label: "จำนวน", num: true }],
                 rows: (data ? data.byType : []).map((r) => ({ label: EVENT_LABEL[r.key] || r.key, value: r.count })) }}>
-              <HBars color="var(--viz-1)" unit="events" data={(data ? data.byType : []).map((r) => ({ key: r.key, label: EVENT_LABEL[r.key] || r.key, value: r.count }))} />
+              <HBars color="var(--viz-1)" unit="ครั้ง" data={(data ? data.byType : []).map((r) => ({ key: r.key, label: EVENT_LABEL[r.key] || r.key, value: r.count }))} />
             </ChartCard>
 
-            <ChartCard className="span-4" title="Top attacker IPs" sub="Failed attempts · click to analyze"
-              table={{ columns: [{ key: "ip", label: "IP", mono: true }, { key: "failed", label: "Failed", num: true }, { key: "success", label: "Success", num: true }, { key: "hosts", label: "Servers", num: true }],
+            <ChartCard className="span-4" title="IP ที่โจมตีมากที่สุด" sub="จำนวนครั้งที่ล็อกอินผิด · คลิกเพื่อวิเคราะห์"
+              table={{ columns: [{ key: "ip", label: "IP", mono: true }, { key: "failed", label: "ไม่สำเร็จ", num: true }, { key: "success", label: "สำเร็จ", num: true }, { key: "hosts", label: "เซิร์ฟเวอร์", num: true }],
                 rows: data ? data.topIps : [] }}>
-              <HBars color="var(--viz-2)" unit="failed" empty="No attacking IPs" onSelect={(d) => setAnalyze(d.key)}
+              <HBars color="var(--viz-2)" unit="ครั้ง" empty="ไม่มี IP ที่โจมตี" onSelect={(d) => setAnalyze(d.key)}
                 data={(data ? data.topIps : []).map((r) => ({ key: r.ip, label: r.ip, mono: true, value: r.failed,
-                  meta: `${r.hosts} server(s) · ${r.success} successful login(s)` }))} />
+                  meta: `${r.hosts} เซิร์ฟเวอร์ · ล็อกอินสำเร็จ ${r.success} ครั้ง` }))} />
             </ChartCard>
 
-            <ChartCard className="span-4" title="Events by severity"
-              table={{ columns: [{ key: "label", label: "Severity" }, { key: "value", label: "Events", num: true }],
+            <ChartCard className="span-4" title="เหตุการณ์ตามความรุนแรง"
+              table={{ columns: [{ key: "label", label: "ความรุนแรง" }, { key: "value", label: "เหตุการณ์", num: true }],
                 rows: SEVERITIES.map((s) => ({ label: s.label, value: sevMap[s.key] || 0 })) }}>
-              <Donut centerLabel="events" data={SEVERITIES.map((s) => ({ ...s, value: sevMap[s.key] || 0 }))} />
+              <Donut centerLabel="เหตุการณ์" data={SEVERITIES.map((s) => ({ ...s, value: sevMap[s.key] || 0 }))} />
             </ChartCard>
 
-            <ChartCard className="span-8" title="Activity over time" sub="Failed vs successful logins"
-              table={{ columns: [{ key: "time", label: "Period" }, { key: "failed", label: "Failed", num: true }, { key: "success", label: "Successful", num: true }],
+            <ChartCard className="span-8" title="กิจกรรมตามช่วงเวลา" sub="ล็อกอินไม่สำเร็จเทียบกับสำเร็จ"
+              table={{ columns: [{ key: "time", label: "ช่วงเวลา" }, { key: "failed", label: "ไม่สำเร็จ", num: true }, { key: "success", label: "สำเร็จ", num: true }],
                 rows: series.map((p) => ({ time: bucketLabel(p.t, data.bucketMs, true), failed: p.failed, success: p.success })) }}>
               {data && <LineChart points={series} bucketMs={data.bucketMs} series={[
-                { key: "failed", label: "Failed", color: "var(--viz-2)" },
-                { key: "success", label: "Successful", color: "var(--viz-1)" },
+                { key: "failed", label: "ไม่สำเร็จ", color: "var(--viz-2)" },
+                { key: "success", label: "สำเร็จ", color: "var(--viz-1)" },
               ]} />}
             </ChartCard>
 
-            <ChartCard className="span-4" title="Incidents by attack type"
-              table={{ columns: [{ key: "label", label: "Attack type" }, { key: "value", label: "Incidents", num: true }],
+            <ChartCard className="span-4" title="เหตุการณ์ตามประเภทการโจมตี"
+              table={{ columns: [{ key: "label", label: "ประเภทการโจมตี" }, { key: "value", label: "จำนวน", num: true }],
                 rows: (data ? data.incidents.byAttack : []).map((r) => ({ label: ATTACK_LABEL[r.key] || r.key, value: r.count })) }}>
-              <HBars color="var(--viz-1)" unit="incidents" empty="No incidents in this period"
+              <HBars color="var(--viz-1)" unit="ครั้ง" empty="ไม่มีเหตุการณ์ในช่วงนี้"
                 data={(data ? data.incidents.byAttack : []).map((r) => ({ key: r.key, label: ATTACK_LABEL[r.key] || r.key, value: r.count }))} />
             </ChartCard>
 
-            <ChartCard className="span-4" title="Top targeted accounts" sub="Usernames in failed attempts"
-              table={{ columns: [{ key: "user", label: "Username" }, { key: "count", label: "Attempts", num: true }, { key: "invalid", label: "Non-existent", num: true }],
+            <ChartCard className="span-4" title="บัญชีที่ถูกโจมตีมากที่สุด" sub="ชื่อผู้ใช้ที่ถูกลองล็อกอินผิด"
+              table={{ columns: [{ key: "user", label: "ชื่อผู้ใช้" }, { key: "count", label: "จำนวนครั้ง", num: true }, { key: "invalid", label: "ไม่มีในระบบ", num: true }],
                 rows: data ? data.topUsers : [] }}>
-              <HBars color="var(--viz-2)" unit="attempts" empty="No failed attempts"
+              <HBars color="var(--viz-2)" unit="ครั้ง" empty="ไม่มีการล็อกอินผิด"
                 data={(data ? data.topUsers : []).map((r) => ({ key: r.user, label: r.user, value: r.count,
-                  meta: r.invalid ? `${r.invalid} as non-existent user` : "existing account" }))} />
+                  meta: r.invalid ? `${r.invalid} ครั้งเป็นชื่อที่ไม่มีในระบบ` : "บัญชีที่มีอยู่จริง" }))} />
             </ChartCard>
 
-            <ChartCard className="span-4" title="Incident risk" sub={data ? `${data.incidents.open} open incident(s)` : ""}
-              table={{ columns: [{ key: "label", label: "Risk" }, { key: "value", label: "Incidents", num: true }],
-                rows: RISK_META.map((r) => ({ label: r.key, value: riskMap[r.key] || 0 })) }}>
+            <ChartCard className="span-4" title="ระดับความเสี่ยง" sub={data ? `เปิดอยู่ ${data.incidents.open} เหตุการณ์` : ""}
+              table={{ columns: [{ key: "label", label: "ความเสี่ยง" }, { key: "value", label: "จำนวน", num: true }],
+                rows: RISK_META.map((r) => ({ label: RISK_TH[r.key], value: riskMap[r.key] || 0 })) }}>
               <RiskRows data={riskMap} />
             </ChartCard>
 
             <section className="card viz-card span-12">
               <div className="viz-head">
-                <div><h3>Attacks by country</h3><div className="sub">Failed login attempts by the country of the source IP · drag the globe to rotate</div></div>
+                <div><h3>การโจมตีแยกตามประเทศ</h3><div className="sub">จำนวนครั้งที่ล็อกอินผิดตามประเทศของ IP ต้นทาง · ลากลูกโลกเพื่อหมุน</div></div>
               </div>
               <div className="globe-row">
                 <div className="globe-main"><AttackGlobe rows={data ? data.byCountry : []} selected={country} onSelect={setCountry} /></div>
                 <div className="globe-side">
-                  <HBars color="var(--text-muted)" unit="failed attempts" empty="No attacks with a known country in this period"
-                    onSelect={(d) => setCountry(d.key)} hint="Click to show on the globe"
+                  <HBars color="var(--text-muted)" unit="ครั้ง" empty="ไม่มีการโจมตีที่ระบุประเทศได้ในช่วงนี้"
+                    onSelect={(d) => setCountry(d.key)} hint="คลิกเพื่อดูบนลูกโลก"
                     data={(data ? data.byCountry : []).slice(0, 10).map((r) => ({ key: r.code, label: `${countryName(r.code)} (${r.code})`, value: r.failed,
-                      meta: `${r.ips} unique IP(s) · ${r.hosts} server(s)` }))} />
+                      meta: `${r.ips} IP · ${r.hosts} เซิร์ฟเวอร์` }))} />
                 </div>
               </div>
             </section>
 
             <section className="card viz-card span-12">
-              <div className="viz-head"><div><h3>Attack incidents</h3><div className="sub">Highest risk first · open incidents on top</div></div></div>
+              <div className="viz-head"><div><h3>เหตุการณ์การโจมตี</h3><div className="sub">เรียงจากความเสี่ยงสูงสุด · เหตุการณ์ที่เปิดอยู่แสดงก่อน</div></div></div>
               {!data || !data.incidents.recent.length ? (
-                <div className="viz-empty">No incidents in this period</div>
+                <div className="viz-empty">ไม่มีเหตุการณ์ในช่วงนี้</div>
               ) : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Last seen</th><th>Attack pattern</th><th>Server</th><th>Source</th><th>Account</th><th>Risk</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>พบล่าสุด</th><th>รูปแบบการโจมตี</th><th>เซิร์ฟเวอร์</th><th>ต้นทาง</th><th>บัญชี</th><th>ความเสี่ยง</th><th>สถานะ</th><th></th></tr></thead>
                     <tbody>
                       {data.incidents.recent.map((i) => (
                         <tr key={i.id}>
@@ -886,8 +889,8 @@ function Dashboard() {
                           <td className="mono">{i.source_ip || "-"}</td>
                           <td>{i.username || "-"}</td>
                           <td>{riskChip(i.risk_level)}</td>
-                          <td><Chip kind={i.status === "OPEN" ? "error" : "success"}>{i.status}</Chip></td>
-                          <td>{i.source_ip && <button className="btn ghost sm" onClick={() => setAnalyze(i.source_ip)}>Analyze</button>}</td>
+                          <td><Chip kind={i.status === "OPEN" ? "error" : "success"}>{STATUS_TH[i.status] || i.status}</Chip></td>
+                          <td>{i.source_ip && <button className="btn ghost sm" onClick={() => setAnalyze(i.source_ip)}>วิเคราะห์</button>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -940,9 +943,14 @@ function Servers() {
     }
   }
 
-  async function regenerate(id) {
-    await api("/api/servers/" + id + "/regenerate-key", { method: "POST" });
-    load();
+  async function regenerate(s) {
+    if (!confirm(`สร้าง API key ใหม่ให้ "${s.name}"? key เดิมจะใช้ไม่ได้ทันที ต้องแก้ key ใน agent ของเครื่องนั้นด้วย`)) return;
+    try { await api("/api/servers/" + s.id + "/regenerate-key", { method: "POST" }); load(); } catch (e) { setError(e.message); }
+  }
+
+  async function remove(s) {
+    if (!confirm(`ลบเซิร์ฟเวอร์ "${s.name}"?\n\nAPI key ของเครื่องนี้จะใช้ไม่ได้ และ log กับเหตุการณ์ทั้งหมดของเครื่องนี้จะถูกลบถาวร`)) return;
+    try { await api("/api/servers/" + s.id, { method: "DELETE" }); load(); } catch (e) { setError(e.message); }
   }
 
   function copyKey(key, id) {
@@ -955,31 +963,31 @@ function Servers() {
   return (
     <div>
       <div className="page-title">
-        <h1>Servers</h1>
-        <div className="sub">Register an SSH server to get its API key</div>
+        <h1>เซิร์ฟเวอร์</h1>
+        <div className="sub">ลงทะเบียนเซิร์ฟเวอร์ SSH เพื่อรับ API key</div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h4 style={{ marginBottom: 12 }}>Add Server</h4>
+        <h4 style={{ marginBottom: 12 }}>เพิ่มเซิร์ฟเวอร์</h4>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={createServer} className="toolbar">
-          <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-          <input className="input" placeholder="Hostname" value={hostname} onChange={(e) => setHostname(e.target.value)} />
-          <input className="input" placeholder="IP address" value={ip} onChange={(e) => setIp(e.target.value)} />
-          <button className="btn primary" disabled={creating}>{creating ? "Creating..." : "Add Server"}</button>
+          <input className="input" placeholder="ชื่อเซิร์ฟเวอร์" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="input" placeholder="Hostname (ไม่บังคับ)" value={hostname} onChange={(e) => setHostname(e.target.value)} />
+          <input className="input" placeholder="IP (ไม่บังคับ)" value={ip} onChange={(e) => setIp(e.target.value)} />
+          <button className="btn primary" disabled={creating}>{creating ? "กำลังสร้าง..." : "เพิ่มเซิร์ฟเวอร์"}</button>
         </form>
       </div>
 
       <div className="card">
         {loading ? (
-          <div className="empty">Loading...</div>
+          <div className="empty">กำลังโหลด...</div>
         ) : servers.length === 0 ? (
-          <div className="empty">No servers registered yet</div>
+          <div className="empty">ยังไม่มีเซิร์ฟเวอร์</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Name</th>{isAdmin && <th>Owner</th>}<th>Hostname</th><th>IP</th><th>Status</th><th>API Key</th><th>Logs</th><th>Incidents</th><th>Actions</th></tr>
+                <tr><th>ชื่อ</th>{isAdmin && <th>เจ้าของ</th>}<th>Hostname</th><th>IP</th><th>สถานะ</th><th>API Key</th><th>Log</th><th>เหตุการณ์</th><th>จัดการ</th></tr>
               </thead>
               <tbody>
                 {servers.map((s) => (
@@ -988,13 +996,14 @@ function Servers() {
                     {isAdmin && <td>{s.owner || "-"}</td>}
                     <td className="mono">{s.hostname || "-"}</td>
                     <td className="mono">{s.ip_address || "-"}</td>
-                    <td><Chip kind={s.status === "online" ? "success" : "muted"}>{s.status}</Chip></td>
+                    <td><Chip kind={s.status === "online" ? "success" : "muted"}>{s.status === "online" ? "ออนไลน์" : "ออฟไลน์"}</Chip></td>
                     <td className="mono" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.api_key}>{s.api_key || "-"}</td>
                     <td className="mono">{s.log_count}</td>
                     <td className="mono">{s.open_incidents}</td>
-                    <td>
-                      <button className="btn ghost sm" onClick={() => copyKey(s.api_key, s.id)}>{copied === s.id ? "Copied!" : "Copy Key"}</button>
-                      <button className="btn ghost sm" onClick={() => regenerate(s.id)}>Regenerate</button>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <button className="btn ghost sm" onClick={() => copyKey(s.api_key, s.id)}>{copied === s.id ? "คัดลอกแล้ว!" : "คัดลอก key"}</button>
+                      <button className="btn ghost sm" onClick={() => regenerate(s)}>สร้าง key ใหม่</button>
+                      <button className="btn ghost sm danger" onClick={() => remove(s)}>ลบ</button>
                     </td>
                   </tr>
                 ))}
@@ -1031,27 +1040,27 @@ function Logs() {
   return (
     <div>
       <div className="page-title">
-        <h1>Logs</h1>
-        <div className="sub">{total} total events</div>
+        <h1>Log</h1>
+        <div className="sub">ทั้งหมด {fmtNum(total)} เหตุการณ์</div>
       </div>
       <div className="toolbar">
         <select className="input" value={eventType} onChange={(e) => setEventType(e.target.value)}>
-          <option value="">All events</option>
+          <option value="">ทุกเหตุการณ์</option>
           {Object.entries(EVENT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input className="input" placeholder="Filter by IP" value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} />
-        <button className="btn secondary sm" onClick={load}>Refresh</button>
+        <input className="input" placeholder="กรองด้วย IP" value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} />
+        <button className="btn secondary sm" onClick={load}>รีเฟรช</button>
       </div>
       <div className="card">
         {loading ? (
-          <div className="empty">Loading...</div>
+          <div className="empty">กำลังโหลด...</div>
         ) : logs.length === 0 ? (
-          <div className="empty">No logs</div>
+          <div className="empty">ไม่มี log</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Time</th><th>Server</th><th>Event</th><th>User</th><th>IP</th><th>Severity</th></tr>
+                <tr><th>เวลา</th><th>เซิร์ฟเวอร์</th><th>เหตุการณ์</th><th>ผู้ใช้</th><th>IP</th><th>ความรุนแรง</th></tr>
               </thead>
               <tbody>
                 {logs.map((l) => (
@@ -1061,7 +1070,7 @@ function Logs() {
                     <td>{EVENT_LABEL[l.event_type] || l.event_type}</td>
                     <td>{l.username || "-"}</td>
                     <td className="mono">{l.source_ip || "-"}</td>
-                    <td><Chip kind={SEVERITY_CHIP[l.severity] || "muted"}>{l.severity}</Chip></td>
+                    <td><Chip kind={SEVERITY_CHIP[l.severity] || "muted"}>{SEVERITY_TH[l.severity] || l.severity}</Chip></td>
                   </tr>
                 ))}
               </tbody>
@@ -1094,19 +1103,19 @@ function Incidents() {
   return (
     <div>
       <div className="page-title">
-        <h1>Incidents</h1>
-        <div className="sub">Detected security incidents</div>
+        <h1>เหตุการณ์</h1>
+        <div className="sub">เหตุการณ์ด้านความปลอดภัยที่ตรวจพบ</div>
       </div>
       <div className="card">
         {loading ? (
-          <div className="empty">Loading...</div>
+          <div className="empty">กำลังโหลด...</div>
         ) : incidents.length === 0 ? (
-          <div className="empty">No incidents</div>
+          <div className="empty">ไม่มีเหตุการณ์</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Detected</th><th>Attack pattern</th><th>Server</th><th>Source</th><th>Account</th><th>Risk</th><th>Attempts</th><th>Status</th><th>Actions</th></tr>
+                <tr><th>ตรวจพบเมื่อ</th><th>รูปแบบการโจมตี</th><th>เซิร์ฟเวอร์</th><th>ต้นทาง</th><th>บัญชี</th><th>ความเสี่ยง</th><th>จำนวนครั้ง</th><th>สถานะ</th><th>จัดการ</th></tr>
               </thead>
               <tbody>
                 {incidents.map((i) => (
@@ -1118,13 +1127,13 @@ function Incidents() {
                     <td>{i.username || "-"}</td>
                     <td>{riskChip(i.risk_level)}</td>
                     <td className="mono">{i.failed_attempts}</td>
-                    <td><Chip kind={i.status === "OPEN" ? "error" : "success"}>{i.status}</Chip></td>
+                    <td><Chip kind={i.status === "OPEN" ? "error" : "success"}>{STATUS_TH[i.status] || i.status}</Chip></td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {i.source_ip && <button className="btn ghost sm" onClick={() => setAnalyze(i.source_ip)}>Analyze</button>}
+                      {i.source_ip && <button className="btn ghost sm" onClick={() => setAnalyze(i.source_ip)}>วิเคราะห์</button>}
                       {i.status === "OPEN" ? (
-                        <button className="btn ghost sm" onClick={() => setStatus(i.id, "RESOLVED")}>Resolve</button>
+                        <button className="btn ghost sm" onClick={() => setStatus(i.id, "RESOLVED")}>แก้ไขแล้ว</button>
                       ) : (
-                        <button className="btn ghost sm" onClick={() => setStatus(i.id, "OPEN")}>Reopen</button>
+                        <button className="btn ghost sm" onClick={() => setStatus(i.id, "OPEN")}>เปิดใหม่</button>
                       )}
                     </td>
                   </tr>
@@ -1148,17 +1157,17 @@ function Users() {
   return (
     <div>
       <div className="page-title">
-        <h1>Users</h1>
-        <div className="sub">All accounts</div>
+        <h1>ผู้ใช้</h1>
+        <div className="sub">บัญชีทั้งหมด</div>
       </div>
       <div className="card">
         <table>
-          <thead><tr><th>Username</th><th>Role</th><th>Servers</th></tr></thead>
+          <thead><tr><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>เซิร์ฟเวอร์</th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.username}</td>
-                <td><Chip kind={u.role === "admin" ? "info" : "muted"}>{u.role}</Chip></td>
+                <td><Chip kind={u.role === "admin" ? "info" : "muted"}>{u.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"}</Chip></td>
                 <td className="mono">{u.server_count}</td>
               </tr>
             ))}
@@ -1178,11 +1187,11 @@ function loadGlobeAssets() {
       const s = document.createElement("script");
       s.src = GLOBE_SRC;
       s.onload = resolve;
-      s.onerror = () => reject(new Error("Could not load the 3D globe library"));
+      s.onerror = () => reject(new Error("โหลดไลบรารีลูกโลก 3D ไม่สำเร็จ"));
       document.head.appendChild(s);
     });
     const geo = fetch("/data/countries.geojson").then((r) => {
-      if (!r.ok) throw new Error("Could not load the country map");
+      if (!r.ok) throw new Error("โหลดแผนที่ประเทศไม่สำเร็จ");
       return r.json();
     });
     globeAssets = Promise.all([lib, geo]).then(([, g]) => g).catch((e) => { globeAssets = null; throw e; });
@@ -1250,7 +1259,7 @@ function AttackGlobe({ rows, selected, onSelect }) {
         const r = byCode.get(f.properties.iso);
         const name = f.properties.name;
         return `<div style="background:rgba(15,17,22,.92);color:#fff;padding:8px 10px;border-radius:6px;font:12px Inter,sans-serif;line-height:1.5">
-          <b>${name}</b>${r ? `<br>${fmtNum(r.failed)} failed attempt(s)<br>${r.ips} unique IP(s) · ${r.hosts} server(s)` : "<br>No attacks"}</div>`;
+          <b>${countryName(f.properties.iso) || name}</b>${r ? `<br>ล็อกอินผิด ${fmtNum(r.failed)} ครั้ง<br>${r.ips} IP · ${r.hosts} เซิร์ฟเวอร์` : "<br>ไม่มีการโจมตี"}</div>`;
       });
   }, []);
 
@@ -1321,20 +1330,20 @@ function AttackGlobe({ rows, selected, onSelect }) {
   return (
     <div style={{ position: "relative" }}>
       {error ? (
-        <div className="viz-empty">{error}. Your browser may not support WebGL.</div>
+        <div className="viz-empty">{error} เบราว์เซอร์อาจไม่รองรับ WebGL</div>
       ) : (
         <>
-          <div ref={boxRef} style={{ width: "100%", minHeight: 300, cursor: "grab", touchAction: "none" }} aria-label="3D globe of attacking countries" />
-          {!ready && <div className="viz-empty" style={{ position: "absolute", inset: 0 }}>Loading globe...</div>}
+          <div ref={boxRef} style={{ width: "100%", minHeight: 300, cursor: "grab", touchAction: "none" }} aria-label="ลูกโลก 3D แสดงประเทศที่โจมตี" />
+          {!ready && <div className="viz-empty" style={{ position: "absolute", inset: 0 }}>กำลังโหลดลูกโลก...</div>}
           {ready && (
             <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
-              <button type="button" className="btn ghost sm" onClick={() => setSpin((s) => !s)}>{spin ? "Pause" : "Spin"}</button>
-              <button type="button" className="btn ghost sm" onClick={() => { onSelect(""); setSpin(true); globeRef.current.pointOfView({ lat: 15, lng: 100, altitude: 2.2 }, 800); }}>Reset</button>
+              <button type="button" className="btn ghost sm" onClick={() => setSpin((s) => !s)}>{spin ? "หยุดหมุน" : "หมุน"}</button>
+              <button type="button" className="btn ghost sm" onClick={() => { onSelect(""); setSpin(true); globeRef.current.pointOfView({ lat: 15, lng: 100, altitude: 2.2 }, 800); }}>รีเซ็ต</button>
             </div>
           )}
           {ready && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-              Drag to rotate · scroll to zoom · hover a country for details · click it (or a table row) to focus
+              ลากเพื่อหมุน · เลื่อนเมาส์เพื่อซูม · ชี้ที่ประเทศเพื่อดูรายละเอียด · คลิกประเทศ (หรือรายการด้านข้าง) เพื่อซูมไปที่ประเทศนั้น
             </div>
           )}
         </>
@@ -1354,8 +1363,8 @@ function Avatar({ name, src, large }) {
 // Center-crop to a square and shrink to 256x256 JPEG in the browser, so uploads stay small (~20-40 KB)
 function resizeAvatar(file) {
   return new Promise((resolve, reject) => {
-    if (!/^image\//.test(file.type)) return reject(new Error("Please choose an image file"));
-    if (file.size > 15 * 1024 * 1024) return reject(new Error("Image is too large (max 15 MB)"));
+    if (!/^image\//.test(file.type)) return reject(new Error("กรุณาเลือกไฟล์รูปภาพ"));
+    if (file.size > 15 * 1024 * 1024) return reject(new Error("รูปใหญ่เกินไป (สูงสุด 15 MB)"));
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -1370,20 +1379,20 @@ function resizeAvatar(file) {
       URL.revokeObjectURL(url);
       resolve(c.toDataURL("image/jpeg", 0.85));
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read that image")); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("อ่านไฟล์รูปนี้ไม่ได้")); };
     img.src = url;
   });
 }
 
 function deviceOf(ua) {
-  if (!ua) return "Unknown device";
+  if (!ua) return "ไม่ทราบอุปกรณ์";
   const browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"
     : /Chrome\//.test(ua) ? "Chrome" : /Version\/.*Safari/.test(ua) ? "Safari" : /curl\//.test(ua) ? "curl" : "Browser";
   const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iOS"
     : /Mac OS X|Macintosh/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
-  return os ? `${browser} on ${os}` : browser;
+  return os ? `${browser} บน ${os}` : browser;
 }
-const METHOD_LABEL = { password: "Password", register: "Sign-up", google: "Google", github: "GitHub" };
+const METHOD_LABEL = { password: "รหัสผ่าน", register: "สมัครสมาชิก", google: "Google", github: "GitHub" };
 
 function LoginHistory() {
   const [rows, setRows] = useState(null);
@@ -1391,20 +1400,20 @@ function LoginHistory() {
   const failed = rows ? rows.filter((r) => !r.success).length : 0;
   return (
     <section className="card" style={{ gridColumn: "1 / -1" }}>
-      <h4 style={{ marginBottom: 8 }}>Sign-in history</h4>
+      <h4 style={{ marginBottom: 8 }}>ประวัติการเข้าสู่ระบบ</h4>
       <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>
-        The last {rows ? rows.length : ""} sign-ins to your account. If you see one you don't recognise, change your password and sign out other devices.
-        {failed > 0 && <> <b style={{ color: "var(--red-text)" }}>{failed} failed attempt(s)</b> with a wrong password.</>}
+        การเข้าสู่ระบบ {rows ? rows.length : ""} ครั้งล่าสุด ถ้าเห็นรายการที่ไม่ใช่คุณ ให้เปลี่ยนรหัสผ่านและออกจากระบบอุปกรณ์อื่นทันที
+        {failed > 0 && <> มี<b style={{ color: "var(--red-text)" }}> การใส่รหัสผิด {failed} ครั้ง</b></>}
       </div>
-      {!rows ? <div className="empty">Loading...</div> : !rows.length ? <div className="empty">No sign-ins recorded yet</div> : (
+      {!rows ? <div className="empty">กำลังโหลด...</div> : !rows.length ? <div className="empty">ยังไม่มีประวัติการเข้าสู่ระบบ</div> : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Time</th><th>Result</th><th>Method</th><th>IP address</th><th>Location</th><th>Device</th></tr></thead>
+            <thead><tr><th>เวลา</th><th>ผลลัพธ์</th><th>วิธี</th><th>IP</th><th>ประเทศ</th><th>อุปกรณ์</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td className="mono">{fmtTime(r.created_at)}</td>
-                  <td><Chip kind={r.success ? "success" : "error"}>{r.success ? "success" : "failed"}</Chip></td>
+                  <td><Chip kind={r.success ? "success" : "error"}>{r.success ? "สำเร็จ" : "ไม่สำเร็จ"}</Chip></td>
                   <td>{METHOD_LABEL[r.method] || r.method}</td>
                   <td className="mono">{r.ip_address || "-"}</td>
                   <td>{r.country && r.country !== "??" ? countryName(r.country) : "-"}</td>
@@ -1441,8 +1450,8 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
     try { await fn(); } catch (e) { bad(e.message); } finally { setBusy(""); }
   }
 
-  const mailNote = (sent) => sent ? "A verification email was sent - open the link in it." :
-    "Email saved. This server has no mail (SMTP) configured, so no email could be sent - ask the administrator.";
+  const mailNote = (sent) => sent ? "ส่งอีเมลยืนยันแล้ว กรุณากดลิงก์ในอีเมล" :
+    "บันทึกอีเมลแล้ว แต่เซิร์ฟเวอร์ยังไม่ได้ตั้งค่าการส่งอีเมล (SMTP) จึงส่งอีเมลยืนยันไม่ได้ กรุณาติดต่อผู้ดูแลระบบ";
 
   const saveEmail = (e) => { e.preventDefault(); run("email", async () => {
     const d = await api("/api/profile/email", { method: "PATCH", body: JSON.stringify({ email, current_password: emailPw }) });
@@ -1461,54 +1470,54 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
       const image = await resizeAvatar(file);
       const d = await api("/api/profile/avatar", { method: "PUT", body: JSON.stringify({ image }) });
       setP(d); onProfile && onProfile(d);
-      ok("Profile picture updated.");
+      ok("เปลี่ยนรูปโปรไฟล์แล้ว");
     });
   };
   const removeAvatar = () => run("avatar", async () => {
     const d = await api("/api/profile/avatar", { method: "DELETE" });
     setP(d); onProfile && onProfile(d);
-    ok("Profile picture removed.");
+    ok("ลบรูปโปรไฟล์แล้ว");
   });
   const savePw = (e) => { e.preventDefault(); run("pw", async () => {
     const d = await api("/api/profile/password", { method: "POST",
       body: JSON.stringify({ current_password: pw.cur, new_password: pw.next, confirm_password: pw.confirm }) });
     setToken(d.token); onToken();
     setPw({ cur: "", next: "", confirm: "" });
-    ok("Password changed. Other devices were signed out.");
+    ok("เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นถูกออกจากระบบแล้ว");
   }); };
   const signOutAll = () => run("all", async () => {
     const d = await api("/api/profile/logout-everywhere", { method: "POST" });
     setToken(d.token); onToken();
-    ok("Signed out of all other devices.");
+    ok("ออกจากระบบอุปกรณ์อื่นทั้งหมดแล้ว");
   });
   const del = (e) => { e.preventDefault();
-    if (!confirm("Delete your account and ALL your servers, logs and incidents? This cannot be undone.")) return;
+    if (!confirm("ลบบัญชีพร้อมเซิร์ฟเวอร์ log และเหตุการณ์ทั้งหมดของคุณ? การลบนี้ย้อนกลับไม่ได้")) return;
     run("del", async () => {
       await api("/api/profile", { method: "DELETE", body: JSON.stringify(p.has_password ? { password: delPw } : { confirm_username: delPw }) });
       onDeleted();
     });
   };
 
-  if (!p) return <div className="empty">{notice.err || "Loading..."}</div>;
-  const providerLabel = p.provider === "local" ? "Username & password" : p.provider === "google" ? "Google" : "GitHub";
+  if (!p) return <div className="empty">{notice.err || "กำลังโหลด..."}</div>;
+  const providerLabel = p.provider === "local" ? "ชื่อผู้ใช้และรหัสผ่าน" : p.provider === "google" ? "Google" : "GitHub";
 
   return (
     <div>
       <div className="page-title profile-head">
         <button type="button" className="avatar-edit" onClick={() => fileRef.current.click()} disabled={busy === "avatar"}
-          title="Change profile picture" aria-label="Change profile picture">
+          title="เปลี่ยนรูปโปรไฟล์" aria-label="เปลี่ยนรูปโปรไฟล์">
           <Avatar name={p.username} src={p.avatar} large />
           <span className="avatar-cam" aria-hidden="true">{busy === "avatar" ? "…" : "✎"}</span>
         </button>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={pickAvatar} hidden />
         <div>
           <h1>{p.username}</h1>
-          <div className="sub">{p.email || "No email"} · {p.role === "admin" ? "Admin" : "User"} · your account, email and security</div>
+          <div className="sub">{p.email || "ยังไม่มีอีเมล"} · {p.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"} · บัญชี อีเมล และความปลอดภัยของคุณ</div>
           <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
             <button type="button" className="btn secondary sm" disabled={busy === "avatar"} onClick={() => fileRef.current.click()}>
-              {p.avatar ? "Change picture" : "Upload picture"}
+              {p.avatar ? "เปลี่ยนรูป" : "อัปโหลดรูป"}
             </button>
-            {p.avatar && <button type="button" className="btn ghost sm" disabled={busy === "avatar"} onClick={removeAvatar}>Remove</button>}
+            {p.avatar && <button type="button" className="btn ghost sm" disabled={busy === "avatar"} onClick={removeAvatar}>ลบรูป</button>}
           </div>
         </div>
       </div>
@@ -1516,75 +1525,75 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
       {notice.err && <div className="error-banner">{notice.err}</div>}
       <div className="profile-grid">
         <section className="card">
-          <h4 style={{ marginBottom: 14 }}>Account</h4>
+          <h4 style={{ marginBottom: 14 }}>บัญชี</h4>
           <dl className="kv" style={{ margin: 0 }}>
-            <dt>Username</dt><dd>{p.username}</dd>
-            <dt>Role</dt><dd><Chip kind={p.role === "admin" ? "info" : "muted"}>{p.role}</Chip></dd>
-            <dt>Sign-in method</dt><dd>{providerLabel}</dd>
-            <dt>Member since</dt><dd>{p.created_at ? fmtTime(p.created_at) : "-"}</dd>
-            <dt>Last sign-in</dt><dd>{p.last_login_at ? fmtTime(p.last_login_at) : "-"}</dd>
-            <dt>Servers</dt><dd>{p.servers} <a href="/get-key" style={{ marginLeft: 8 }}>Manage keys</a></dd>
+            <dt>ชื่อผู้ใช้</dt><dd>{p.username}</dd>
+            <dt>บทบาท</dt><dd><Chip kind={p.role === "admin" ? "info" : "muted"}>{p.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"}</Chip></dd>
+            <dt>วิธีเข้าสู่ระบบ</dt><dd>{providerLabel}</dd>
+            <dt>สมัครเมื่อ</dt><dd>{p.created_at ? fmtTime(p.created_at) : "-"}</dd>
+            <dt>เข้าระบบล่าสุด</dt><dd>{p.last_login_at ? fmtTime(p.last_login_at) : "-"}</dd>
+            <dt>เซิร์ฟเวอร์</dt><dd>{p.servers} <a href="/get-key" style={{ marginLeft: 8 }}>จัดการ key</a></dd>
           </dl>
         </section>
 
         <section className="card">
-          <h4 style={{ marginBottom: 14 }}>Email</h4>
+          <h4 style={{ marginBottom: 14 }}>อีเมล</h4>
           <div style={{ marginBottom: 14, fontSize: 14 }}>
-            {p.email ? <>{p.email} <Chip kind={p.email_verified ? "success" : "warning"}>{p.email_verified ? "verified" : "not verified"}</Chip></> : "No email set"}
+            {p.email ? <>{p.email} <Chip kind={p.email_verified ? "success" : "warning"}>{p.email_verified ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}</Chip></> : "ยังไม่ได้ตั้งอีเมล"}
             {p.email && !p.email_verified && (
-              <button type="button" className="btn ghost sm" style={{ marginLeft: 8 }} disabled={busy === "resend"} onClick={resend}>Resend email</button>
+              <button type="button" className="btn ghost sm" style={{ marginLeft: 8 }} disabled={busy === "resend"} onClick={resend}>ส่งอีเมลยืนยันอีกครั้ง</button>
             )}
           </div>
           <form onSubmit={saveEmail}>
             <div className="field">
-              <label>{p.email ? "New email" : "Email"}</label>
+              <label>{p.email ? "อีเมลใหม่" : "อีเมล"}</label>
               <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             {p.has_password && (
               <div className="field">
-                <label>Current password</label>
+                <label>รหัสผ่านปัจจุบัน</label>
                 <input className="input" type="password" value={emailPw} onChange={(e) => setEmailPw(e.target.value)} required />
               </div>
             )}
-            <button className="btn primary" disabled={busy === "email"}>{busy === "email" ? "Saving..." : "Save email"}</button>
+            <button className="btn primary" disabled={busy === "email"}>{busy === "email" ? "กำลังบันทึก..." : "บันทึกอีเมล"}</button>
           </form>
         </section>
 
         <section className="card">
-          <h4 style={{ marginBottom: 14 }}>Password</h4>
+          <h4 style={{ marginBottom: 14 }}>รหัสผ่าน</h4>
           {p.has_password ? (
             <form onSubmit={savePw}>
-              <div className="field"><label>Current password</label>
+              <div className="field"><label>รหัสผ่านปัจจุบัน</label>
                 <input className="input" type="password" value={pw.cur} onChange={(e) => setPw({ ...pw, cur: e.target.value })} required /></div>
-              <div className="field"><label>New password (min 6 characters)</label>
+              <div className="field"><label>รหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)</label>
                 <input className="input" type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} required /></div>
-              <div className="field"><label>Confirm new password</label>
+              <div className="field"><label>ยืนยันรหัสผ่านใหม่</label>
                 <input className="input" type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} required /></div>
-              <button className="btn primary" disabled={busy === "pw"}>{busy === "pw" ? "Saving..." : "Change password"}</button>
+              <button className="btn primary" disabled={busy === "pw"}>{busy === "pw" ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}</button>
             </form>
           ) : (
-            <div style={{ color: "var(--text-muted)", fontSize: 14 }}>This account signs in with {providerLabel}, so there is no password to change here.</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 14 }}>บัญชีนี้เข้าสู่ระบบด้วย {providerLabel} จึงไม่มีรหัสผ่านให้เปลี่ยน</div>
           )}
         </section>
 
         <section className="card">
-          <h4 style={{ marginBottom: 8 }}>Sessions</h4>
-          <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>Sign out of every other browser or device where you are logged in. This device stays signed in.</div>
-          <button className="btn secondary" disabled={busy === "all"} onClick={signOutAll}>Sign out other devices</button>
+          <h4 style={{ marginBottom: 8 }}>อุปกรณ์ที่ล็อกอินอยู่</h4>
+          <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>ออกจากระบบทุกเบราว์เซอร์และอุปกรณ์อื่นที่ล็อกอินอยู่ ยกเว้นเครื่องนี้</div>
+          <button className="btn secondary" disabled={busy === "all"} onClick={signOutAll}>ออกจากระบบอุปกรณ์อื่น</button>
         </section>
 
         <LoginHistory />
 
         {p.role !== "admin" && (
           <section className="card" style={{ boxShadow: "inset 3px 0 0 var(--red)" }}>
-            <h4 style={{ marginBottom: 8, color: "var(--red-text)" }}>Delete account</h4>
-            <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>Permanently deletes your account, your servers and all their logs and incidents.</div>
+            <h4 style={{ marginBottom: 8, color: "var(--red-text)" }}>ลบบัญชี</h4>
+            <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>ลบบัญชี เซิร์ฟเวอร์ และ log กับเหตุการณ์ทั้งหมดของคุณอย่างถาวร</div>
             <form onSubmit={del}>
               <div className="field">
-                <label>{p.has_password ? "Enter your password to confirm" : "Type your username to confirm"}</label>
+                <label>{p.has_password ? "ใส่รหัสผ่านเพื่อยืนยัน" : "พิมพ์ชื่อผู้ใช้เพื่อยืนยัน"}</label>
                 <input className="input" type={p.has_password ? "password" : "text"} value={delPw} onChange={(e) => setDelPw(e.target.value)} required />
               </div>
-              <button className="btn primary" disabled={busy === "del"}>Delete my account</button>
+              <button className="btn primary" disabled={busy === "del"}>ลบบัญชีของฉัน</button>
             </form>
           </section>
         )}
@@ -1595,11 +1604,11 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
 
 /* ---------- App ---------- */
 const PAGES = [
-  { key: "dashboard", label: "Dashboard", icon: "▦" },
-  { key: "servers", label: "Servers", icon: "▣" },
-  { key: "logs", label: "Logs", icon: "≡" },
-  { key: "incidents", label: "Incidents", icon: "⚠" },
-  { key: "users", label: "Users", icon: "◉" },
+  { key: "dashboard", label: "แดชบอร์ด", icon: "▦" },
+  { key: "servers", label: "เซิร์ฟเวอร์", icon: "▣" },
+  { key: "logs", label: "Log", icon: "≡" },
+  { key: "incidents", label: "เหตุการณ์", icon: "⚠" },
+  { key: "users", label: "ผู้ใช้", icon: "◉" },
 ];
 
 function App() {
@@ -1649,25 +1658,25 @@ function App() {
         <a className="brand" href="/" style={{ textDecoration: "none" }}>SSH Monitor</a>
         <div className="role-badge">
           <span className="dot" />
-          <span><strong>{isAdmin ? "Admin" : "User"}</strong> · {isAdmin ? "all users" : "my monitor"}</span>
+          <span><strong>{isAdmin ? "ผู้ดูแลระบบ" : "ผู้ใช้"}</strong> · {isAdmin ? "เห็นทุกบัญชี" : "เฉพาะของฉัน"}</span>
         </div>
-        <div className="nav-label">Menu</div>
+        <div className="nav-label">เมนู</div>
         {pages.map((p) => (
           <div key={p.key} className={"nav-item" + (page === p.key ? " active" : "")} onClick={() => setPage(p.key)}>
             <span>{p.icon}</span> {p.label}
           </div>
         ))}
-        <div className="nav-item" onClick={() => { window.location.href = "/get-key"; }}><span>⚿</span> Get Key</div>
+        <div className="nav-item" onClick={() => { window.location.href = "/get-key"; }}><span>⚿</span> รับ API Key</div>
         <div className="spacer" style={{ flex: 1 }} />
         <div className="sidebar-foot">
           <ThemeToggle />
-          <div className="nav-item" onClick={handleLogout}><span>⏻</span> Logout</div>
+          <div className="nav-item" onClick={handleLogout}><span>⏻</span> ออกจากระบบ</div>
         </div>
       </aside>
       <main className="main">
         <button type="button" className={"user-chip" + (page === "profile" ? " active" : "")} onClick={() => setPage("profile")}
-          title="Your profile" aria-label={`Open profile of ${username}`}>
-          <span className="who"><b>{username}</b><span>{isAdmin ? "Admin" : "User"} · Profile</span></span>
+          title="โปรไฟล์ของคุณ" aria-label={`เปิดโปรไฟล์ของ ${username}`}>
+          <span className="who"><b>{username}</b><span>{isAdmin ? "ผู้ดูแลระบบ" : "ผู้ใช้"} · โปรไฟล์</span></span>
           <Avatar name={username} src={me && me.avatar} />
         </button>
         {page === "dashboard" && <Dashboard />}

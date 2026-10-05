@@ -141,6 +141,14 @@ npm start
    log อยู่ที่ `data\server.log` (รอบก่อนหน้า `data\server.prev.log`, ประวัติรีสตาร์ท `data\restarts.log`)
 3. เปิด Funnel ครั้งเดียว (ค่าจะคงอยู่แม้รีบูต): `tailscale funnel --bg 5000` ปิดด้วย `tailscale funnel --https=443 off`
 4. ปิด sleep ของเครื่อง: `powercfg /change standby-timeout-ac 0`
+5. สำรองฐานข้อมูลอัตโนมัติทุกวันตี 3 (เก็บ 14 ชุดล่าสุด):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\windows\install-backup.ps1
+   ```
+   ไฟล์สำรองไปอยู่ที่ OneDrive (`OneDrive\SSH-Monitor-backups`) ถ้ามี จึงออกนอกเครื่องด้วย ไม่งั้นอยู่ที่ `data\backups` เปลี่ยนที่เก็บได้ด้วย `BACKUP_DIR` และจำนวนด้วย `BACKUP_KEEP` ใน `.env` สำรองเองได้ทันทีด้วย `node scripts/backup.js`
+   กู้คืน: หยุดเว็บ แล้วคัดลอกไฟล์สำรองมาทับ `data\ssh-monitor.db` (ลบ `ssh-monitor.db-wal` และ `-shm` เดิมทิ้งก่อน)
+
+task "SSH Monitor" ตรวจทุก 5 นาทีและเปิดเว็บใหม่เองถ้าหยุดไป ล็อกอินผิด 10 ครั้งจาก IP เดียวต้องรอ 15 นาที
 
 เว็บใช้ได้เฉพาะตอนเครื่องเปิดอยู่ ถ้าเครื่องปิด agent จะส่ง log ไม่ได้ในช่วงนั้น
 

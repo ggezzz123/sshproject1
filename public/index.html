@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SSH Monitor</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <meta name="description" content="เฝ้าระวังการ login SSH ของทุกเซิร์ฟเวอร์แบบ real-time ตรวจจับ brute force อัตโนมัติ ติดตั้ง agent ได้ในคำสั่งเดียว" />
   <script src="/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -205,7 +206,7 @@ sudo journalctl -u ssh-monitor -f</span></div>
         </details>
         <details>
           <summary>ถ้า API key รั่วต้องทำอย่างไร?</summary>
-          <p>เข้า dashboard หรือหน้า Get API Key แล้วกด Regenerate key เดิมจะใช้ไม่ได้ทันที จากนั้นแก้ <code>MONITOR_API_KEY</code> ใน <code>/opt/ssh-monitor/.env</code> บนเซิร์ฟเวอร์แล้ว restart service</p>
+          <p>เข้า dashboard หรือหน้ารับ API Key แล้วกด "สร้างใหม่" key เดิมจะใช้ไม่ได้ทันที จากนั้นแก้ <code>MONITOR_API_KEY</code> ใน <code>/opt/ssh-monitor/.env</code> บนเซิร์ฟเวอร์แล้ว restart service</p>
         </details>
       </div>
     </div>
@@ -241,7 +242,7 @@ sudo journalctl -u ssh-monitor -f</span></div>
   (function () {
     var origin = API_CONFIG.BACKEND_URL || location.origin;
     document.getElementById("installCmd").textContent =
-      "curl -sSL " + origin + "/install.sh | sudo bash -s -- \\\n  " + origin + "/api/logs <API_KEY>";
+      "curl -sSL " + origin + "/install.sh | sudo MONITOR_API_KEY=<API_KEY> \\\n  bash -s -- " + origin + "/api/logs";
 
     document.querySelectorAll(".lp-copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
