@@ -151,7 +151,8 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
-    systemctl start "$SERVICE_NAME"
+    # restart (not start): when the agent is already running, re-installing with a new key must take effect
+    systemctl restart "$SERVICE_NAME"
 }
 
 install_initd() {
@@ -171,7 +172,7 @@ case "\$1" in
 esac
 EOF
     chmod +x "/etc/init.d/$SERVICE_NAME"
-    "/etc/init.d/$SERVICE_NAME" start
+    "/etc/init.d/$SERVICE_NAME" restart
 }
 
 if command -v systemctl >/dev/null 2>&1; then

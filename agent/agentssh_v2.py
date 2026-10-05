@@ -13,7 +13,7 @@ import re
 
 # ตัวแปรเก็บเวลาที่อัปเดตค่า .env ล่าสุด
 last_env_refresh = 0
-ENV_REFRESH_INTERVAL = 3600  # รีเฟรชทุก 1 ชั่วโมง (ลดการเรียกใช้บ่อยครั้ง)
+ENV_REFRESH_INTERVAL = 60  # อ่าน .env ใหม่ทุก 60 วินาที เปลี่ยน API key / URL แล้วมีผลโดยไม่ต้องรีสตาร์ท
 
 def load_env_file(path=".env"):
     if not os.path.exists(path):
@@ -50,8 +50,12 @@ def refresh_env():
     if current_time - last_env_refresh > ENV_REFRESH_INTERVAL:
         load_env_file()
         # อัพเดทตัวแปร global จากไฟล์ .env ที่โหลดใหม่
-        MONITOR_API_URL = os.getenv("MONITOR_API_URL", "http://localhost:5000/api/logs")
-        MONITOR_API_KEY = os.getenv("MONITOR_API_KEY", "")
+        new_url = os.getenv("MONITOR_API_URL", "http://localhost:5000/api/logs")
+        new_key = os.getenv("MONITOR_API_KEY", "")
+        if new_key != MONITOR_API_KEY or new_url != MONITOR_API_URL:
+            LOGGER.info("Config changed: now sending to %s with key %s...", new_url, new_key[:9])
+        MONITOR_API_URL = new_url
+        MONITOR_API_KEY = new_key
         LOG_PATH = os.getenv("LOG_PATH", "/var/log")
         LOG_DIR = os.getenv("LOG_DIR", "/opt/ssh-monitor/logs")
         LOG_FILE = os.getenv("LOG_FILE", "auth.log")
@@ -110,15 +114,23 @@ class SSHLogMonitor(PatternMatchingEventHandler):
     def __init__(self, watch_dir, api_url=None, api_key=None):
         super().__init__(patterns=[LOG_FILE], ignore_directories=True, case_sensitive=False)
         self.file_positions = {}
-        # ใช้ค่าจากตัวแปร Global ที่อัพเดทได้
-        self.api_url = api_url or MONITOR_API_URL
-        self.api_key = api_key or MONITOR_API_KEY
+        # ค่าที่ส่งมาตรงๆ (ถ้ามี) ไม่งั้นอ่านจากตัวแปร Global ทุกครั้งที่ส่ง เพื่อให้ key/URL ที่แก้ใน .env มีผลทันที
+        self._api_url = api_url
+        self._api_key = api_key
         self.batch_logs = []
         self.last_send_time = time.time()
         target_file = os.path.join(watch_dir, LOG_FILE)
         if os.path.exists(target_file):
             self.file_positions[target_file] = os.path.getsize(target_file)
             LOGGER.info("Tracking %s from position %s", target_file, self.file_positions[target_file])
+
+    @property
+    def api_url(self):
+        return self._api_url or MONITOR_API_URL
+
+    @property
+    def api_key(self):
+        return self._api_key or MONITOR_API_KEY
 
     def on_modified(self, event):
         filepath = event.src_path
@@ -353,7 +365,7 @@ def main():
     try:
         while True:
             time.sleep(1)
-            # รีเฟรชค่า .env เป็นระยะ (ทุก 60 วินาที)
+            # รีเฟรชค่า .env เป็นระยะ (ทุก ENV_REFRESH_INTERVAL วินาที)
             refresh_env()
             if event_handler.batch_logs and (time.time() - event_handler.last_send_time) > SEND_INTERVAL:
                 event_handler.send_logs_to_server()
