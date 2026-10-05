@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const db = require("../db");
 const { signToken } = require("../middleware/auth");
 const { mirrorRegistration } = require("../oracleSync");
+const { recordLogin } = require("../loginLog");
 
 const router = express.Router();
 
@@ -101,8 +102,6 @@ router.get("/api/auth/config", (req, res) => {
   res.json(out);
 });
 
-router.get("/api/auth/captcha", (req, res) => res.json(newChallenge()));
-
 /* ---------- Local login / register ---------- */
 router.post("/api/auth/login", (req, res) => {
   const { username, password } = req.body || {};
@@ -111,9 +110,10 @@ router.post("/api/auth/login", (req, res) => {
   }
   const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
   if (!user || (user.provider && user.provider !== "local") || !bcrypt.compareSync(password, user.password_hash)) {
+    if (user) recordLogin(user.id, "password", false, req); // shows up as a failed attempt in the owner's history
     return res.status(401).json({ error: "Invalid credentials" });
   }
-  db.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").run(new Date().toISOString(), user.id);
+  recordLogin(user.id, "password", true, req);
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -148,6 +148,7 @@ router.post("/api/auth/register", async (req, res) => {
     )
     .run(username, hash, mail, new Date().toISOString());
   recordRegistration(info.lastInsertRowid, "local", req);
+  recordLogin(info.lastInsertRowid, "register", true, req);
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
   res.json({ token: signToken(user), user: publicUser(user) });
 });
@@ -230,7 +231,7 @@ router.get("/api/auth/oauth/:provider/callback", async (req, res) => {
       recordRegistration(info.lastInsertRowid, provider, req);
       user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
     }
-    db.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").run(new Date().toISOString(), user.id);
+    recordLogin(user.id, provider, true, req);
     res.setHeader("Set-Cookie", "oauth_state=; Path=/api/auth; Max-Age=0");
     res.redirect("/app#token=" + signToken(user));
   } catch (e) {

@@ -180,7 +180,42 @@ a:hover { text-decoration: underline; }
 
 .sidebar-foot { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
 
-.main { flex: 1; min-width: 0; padding: 36px 40px; max-width: 1280px; }
+.main { flex: 1; min-width: 0; padding: 36px 40px; max-width: 1280px; position: relative; }
+
+/* ---------- Account button (top-right) ---------- */
+.page-title { padding-right: 220px; }
+.user-chip {
+  position: absolute; top: 30px; right: 40px; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 5px 5px 14px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  color: var(--text); font: inherit; cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.user-chip:hover { border-color: var(--surface-3); box-shadow: var(--shadow); transform: translateY(-1px); }
+.user-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+.user-chip.active { border-color: var(--red); }
+.user-chip .who { text-align: right; line-height: 1.2; }
+.user-chip .who b { display: block; font-size: 13px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-chip .who span { font-size: 11px; color: var(--text-muted); }
+.avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--red); color: #fff; font-weight: 700; font-size: 15px;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--border);
+}
+.avatar.lg { width: 72px; height: 72px; font-size: 30px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--border); }
+img.avatar { object-fit: cover; background: var(--surface-2); }
+.avatar-edit { position: relative; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; flex: none; }
+.avatar-edit:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+.avatar-edit:hover .avatar { filter: brightness(0.85); }
+.avatar-cam {
+  position: absolute; right: -2px; bottom: -2px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+}
+.profile-head { display: flex; align-items: center; gap: 18px; margin-bottom: 28px; }
+
 
 /* ---------- Typography ---------- */
 h1, h2, h3, h4 { font-family: var(--font-body); font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
@@ -646,6 +681,9 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--text); m
 @media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
   .main { padding: 28px 24px; }
+  .user-chip { top: 22px; right: 24px; padding: 4px; }
+  .user-chip .who { display: none; }
+  .page-title { padding-right: 56px; }
 }
 
 @media (max-width: 760px) {

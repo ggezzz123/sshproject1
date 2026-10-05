@@ -31,7 +31,7 @@
 |---|---|
 | `server.js` | แอป Express: ต่อ route ต่าง ๆ ให้บริการหน้าเว็บและตัวติดตั้ง agent |
 | `db.js` | schema และ migration ของ SQLite (`node:sqlite`) |
-| `routes/` | API: `authRoutes` (login / สมัคร / OAuth), `agentRoutes` (รับ log), `serverRoutes`, `logRoutes`, `incidentRoutes`, `dashboardRoutes`, `registerRoutes` |
+| `routes/` | API: `authRoutes` (login / สมัคร / OAuth), `agentRoutes` (รับ log), `serverRoutes`, `logRoutes`, `incidentRoutes`, `dashboardRoutes`, `profileRoutes` |
 | `detectionEngine.js`, `analysisEngine.js` | คำนวณระดับความเสี่ยงและตรวจรูปแบบการโจมตี |
 | `notifier.js` | ส่งแจ้งเตือน incident |
 | `geo.js` | แปลง IP เป็นประเทศ (ฐานข้อมูล offline `geoip-country`) |
@@ -94,7 +94,10 @@ npm start
 - **เปลี่ยนอีเมล** (ต้องใส่รหัสผ่านปัจจุบัน) อีเมลใหม่จะเป็น "not verified" จนกว่าจะกดลิงก์ในอีเมลยืนยัน ลิงก์อายุ 24 ชั่วโมง ขอส่งใหม่ได้ทุก 1 นาที
 - **เปลี่ยนรหัสผ่าน** (ต้องใส่รหัสเดิม และยืนยันรหัสใหม่) อุปกรณ์อื่นจะถูกออกจากระบบอัตโนมัติ
 - **Sign out other devices** ออกจากระบบทุกอุปกรณ์ยกเว้นเครื่องนี้
+- **ประวัติการล็อกอิน** 100 ครั้งล่าสุด: เวลา ผลลัพธ์ (สำเร็จ/รหัสผิด) วิธีล็อกอิน IP ประเทศ และอุปกรณ์/เบราว์เซอร์ (เก็บในตาราง `logins`)
 - **ลบบัญชี** (ลบเซิร์ฟเวอร์ log และ incident ของบัญชีนั้นด้วย; บัญชี admin ลบเองไม่ได้)
+
+**ลืมรหัสผ่าน**: กด "Forgot password?" ที่หน้าล็อกอิน ใส่อีเมลหรือ username ระบบจะส่งลิงก์รีเซ็ต (อายุ 1 ชั่วโมง ใช้ได้ครั้งเดียว) ไปที่อีเมลของบัญชี หลังตั้งรหัสใหม่ทุกอุปกรณ์จะถูกออกจากระบบ ใช้ได้เฉพาะบัญชีที่มีอีเมล
 
 บัญชี Google/GitHub ไม่มีรหัสผ่านให้เปลี่ยน และอีเมลที่ผู้ให้บริการยืนยันแล้วจะถือว่า verified ทันที
 
@@ -113,7 +116,7 @@ npm start
 | `PORT`, `HOST` | ที่อยู่ที่เปิดรับ (ค่าเริ่มต้น `5000`, `0.0.0.0`) |
 | `JWT_SECRET` | ความลับสำหรับ token ล็อกอินและโจทย์ป้องกันบอท **ต้องตั้งเป็นค่าสุ่มยาว ๆ** |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | บัญชี admin ที่สร้างตอนรันครั้งแรก |
-| `VALID_API_KEYS` | API key ของ agent เพิ่มเติม (คั่นด้วยคอมมา) |
+| `VALID_API_KEYS` | API key แบบคงที่ของ agent เพิ่มเติม (ไม่บังคับ คั่นด้วยคอมมา) ปกติใช้ key ของแต่ละเซิร์ฟเวอร์จาก `/get-key` |
 | `DB_PATH` | ไฟล์ SQLite (ค่าเริ่มต้น `./data/ssh-monitor.db`) |
 | `TRUST_PROXY` | ตั้งเป็น `1` เมื่ออยู่หลัง reverse proxy ตัวเดียว เพื่อให้ได้ IP จริงของผู้ใช้ |
 | `PUBLIC_URL` | URL สาธารณะของเว็บ ใช้ทำ callback ของ OAuth |
@@ -134,7 +137,7 @@ fly secrets set JWT_SECRET=... ADMIN_PASSWORD=...
 fly deploy
 ```
 
-`fly.toml` mount volume ไว้ที่ `/data` และตั้ง `DB_PATH=/data/ssh-monitor.db` ถ้าไม่มี volume ฐานข้อมูลจะหายทุกครั้งที่ deploy มี `render.yaml` ไว้ให้ถ้าอยากใช้ Render แทน
+`fly.toml` mount volume ไว้ที่ `/data` และตั้ง `DB_PATH=/data/ssh-monitor.db` ถ้าไม่มี volume ฐานข้อมูลจะหายทุกครั้งที่ deploy
 
 ## ไม่บังคับ: คัดลอกข้อมูลการสมัครไป Oracle บนเครื่องคุณ
 
@@ -164,8 +167,7 @@ Endpoint ของ agent ใช้ `Authorization: Bearer <API key>` ส่ว�
 
 | Endpoint | การยืนยันตัวตน | หน้าที่ |
 |---|---|---|
-| `POST /api/logs`, `POST /api/agent/logs` | API key | รับ log |
-| `POST /api/agent/register`, `POST /api/agent/heartbeat` | API key | วงจรชีวิตของ agent |
+| `POST /api/logs` | API key | รับ log จาก agent |
 | `GET /api/auth/config` | - | ตัวเลือกตอนสมัคร (โจทย์ป้องกันบอท, provider OAuth ที่เปิดอยู่) |
 | `POST /api/auth/login`, `POST /api/auth/register` | - | ยืนยันตัวตน (ได้ JWT กลับมา) |
 | `GET /api/auth/oauth/:provider` (+ `/callback`) | - | ล็อกอิน Google / GitHub |
@@ -175,7 +177,8 @@ Endpoint ของ agent ใช้ `Authorization: Bearer <API key>` ส่ว�
 | `GET /api/users` | JWT (admin) | รายชื่อบัญชี |
 | `GET /api/profile`, `PATCH /api/profile/email`, `POST /api/profile/email/verify-request`, `POST /api/profile/password`, `POST /api/profile/logout-everywhere`, `DELETE /api/profile` | JWT | โปรไฟล์ของตัวเอง |
 | `GET /api/auth/verify-email?token=` | - | ลิงก์ยืนยันอีเมลจากในอีเมล |
-| `POST /api/register-server` | `X-Registration-Token` | ลงทะเบียนเซิร์ฟเวอร์ด้วยตัวเอง |
+| `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` | - | ลืมรหัสผ่าน / ตั้งรหัสใหม่จากลิงก์ในอีเมล |
+| `GET /api/profile/logins` | JWT | ประวัติการล็อกอินของตัวเอง |
 
 ## Detection engine
 

@@ -51,7 +51,7 @@ def refresh_env():
         load_env_file()
         # อัพเดทตัวแปร global จากไฟล์ .env ที่โหลดใหม่
         MONITOR_API_URL = os.getenv("MONITOR_API_URL", "http://localhost:5000/api/logs")
-        MONITOR_API_KEY = os.getenv("MONITOR_API_KEY", "demo_api_key_12345")
+        MONITOR_API_KEY = os.getenv("MONITOR_API_KEY", "")
         LOG_PATH = os.getenv("LOG_PATH", "/var/log")
         LOG_DIR = os.getenv("LOG_DIR", "/opt/ssh-monitor/logs")
         LOG_FILE = os.getenv("LOG_FILE", "auth.log")
@@ -63,7 +63,7 @@ last_env_refresh = time.time()  # เริ่มนับเวลาจาก�
 
 # อ่านค่าเริ่มต้นจาก .env
 MONITOR_API_URL = os.getenv("MONITOR_API_URL", "http://localhost:5000/api/logs")
-MONITOR_API_KEY = os.getenv("MONITOR_API_KEY", "demo_api_key_12345")
+MONITOR_API_KEY = os.getenv("MONITOR_API_KEY", "")
 LOG_PATH = os.getenv("LOG_PATH", "/var/log")
 LOG_DIR = os.getenv("LOG_DIR", "/opt/ssh-monitor/logs")
 LOG_FILE = os.getenv("LOG_FILE", "auth.log")

@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../db");
 
-const VALID_API_KEYS = (process.env.VALID_API_KEYS || "demo_api_key_12345,test_key_67890")
+const VALID_API_KEYS = (process.env.VALID_API_KEYS || "")
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);

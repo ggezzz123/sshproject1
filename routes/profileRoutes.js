@@ -4,11 +4,13 @@ const crypto = require("crypto");
 const db = require("../db");
 const { jwtAuth, signToken } = require("../middleware/auth");
 const { sendMail, enabled: mailEnabled } = require("../mailer");
+const { recentLogins } = require("../loginLog");
 
 const router = express.Router();
 
 const SECRET = process.env.JWT_SECRET || "change-me";
 const VERIFY_TTL_MS = 24 * 3600 * 1000;
+const RESET_TTL_MS = 3600 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /* ---------- signed email-verification token (stateless) ---------- */
@@ -62,9 +64,63 @@ function profileOf(u) {
     created_at: u.created_at || null,
     last_login_at: u.last_login_at || null,
     servers,
+    avatar: u.avatar || null,
     mail_configured: mailEnabled,
   };
 }
+
+/* ---------- password reset (stateless token, single use) ---------- */
+// The token embeds a fingerprint of the current password hash, so it stops working once the password changes.
+const hashTag = (u) => crypto.createHash("sha256").update(String(u.password_hash)).digest("base64url").slice(0, 16);
+function makeResetToken(user) {
+  const body = Buffer.from(JSON.stringify({ u: user.id, h: hashTag(user), x: Date.now() + RESET_TTL_MS })).toString("base64url");
+  return `${body}.${sign("reset." + body)}`;
+}
+function readResetToken(token) {
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  const expected = sign("reset." + body);
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, "base64url").toString());
+    const user = p.x > Date.now() && getUser(p.u);
+    return user && isLocal(user) && hashTag(user) === p.h ? user : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+const lastReset = new Map(); // userId -> time of the last reset mail
+router.post("/api/auth/forgot-password", async (req, res) => {
+  const id = String((req.body || {}).identifier || "").trim();
+  // Same answer whether or not the account exists, so this can't be used to discover accounts
+  const answer = { ok: true, mail_configured: mailEnabled };
+  if (!id) return res.status(400).json({ error: "Enter your email or username" });
+  const user = db.prepare("SELECT * FROM users WHERE lower(email) = lower(?) OR username = ?").get(id, id);
+  if (!user || !isLocal(user) || !user.email) return res.json(answer);
+  if (Date.now() - (lastReset.get(user.id) || 0) < 60000) return res.json(answer);
+  lastReset.set(user.id, Date.now());
+  const link = `${baseUrl(req)}/app#reset=${makeResetToken(user)}`;
+  await sendMail({
+    to: user.email,
+    subject: "Reset your password - SSH Monitor",
+    text: `Hi ${user.username},\n\nSomeone (hopefully you) asked to reset the password of your SSH Monitor account.\nSet a new password here:\n${link}\n\nThe link is valid for 1 hour and works once. If you did not ask for this, ignore this email; your password stays the same.`,
+  });
+  res.json(answer);
+});
+
+router.post("/api/auth/reset-password", (req, res) => {
+  const { token, new_password, confirm_password } = req.body || {};
+  const user = readResetToken(token);
+  if (!user) return res.status(400).json({ error: "This reset link is invalid, expired or already used" });
+  if (!new_password || new_password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+  if (new_password !== confirm_password) return res.status(400).json({ error: "Passwords do not match" });
+  // Opening the emailed link also proves the address belongs to the user. All sessions are signed out.
+  db.prepare(
+    "UPDATE users SET password_hash = ?, email_verified = 1, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?"
+  ).run(bcrypt.hashSync(new_password, 10), user.id);
+  res.json({ ok: true, username: user.username });
+});
 
 /* ---------- public: link from the verification email ---------- */
 router.get("/api/auth/verify-email", (req, res) => {
@@ -134,6 +190,33 @@ router.post("/api/profile/password", (req, res) => {
   res.json({ token: signToken(getUser(u.id)) });
 });
 
+router.get("/api/profile/logins", (req, res) => {
+  res.json(recentLogins(req.user.id));
+});
+
+// Profile picture: the browser crops/resizes it to a small square image; stored as a data URL.
+// Only PNG / JPEG / WebP are accepted (checked by their file signature) - never SVG, which could carry scripts.
+const AVATAR_MAX_BYTES = 200 * 1024;
+const AVATAR_SIGNATURES = {
+  png: (b) => b.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  jpeg: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  webp: (b) => b.slice(0, 4).toString("latin1") === "RIFF" && b.slice(8, 12).toString("latin1") === "WEBP",
+};
+router.put("/api/profile/avatar", (req, res) => {
+  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).image || ""));
+  if (!m) return res.status(400).json({ error: "Use a PNG, JPEG or WebP image" });
+  const bytes = Buffer.from(m[2], "base64");
+  if (bytes.length > AVATAR_MAX_BYTES) return res.status(413).json({ error: "Image is too large (max 200 KB after resizing)" });
+  if (!AVATAR_SIGNATURES[m[1]](bytes)) return res.status(400).json({ error: "The file is not a valid image" });
+  db.prepare("UPDATE users SET avatar = ? WHERE id = ?").run(`data:image/${m[1]};base64,${bytes.toString("base64")}`, req.user.id);
+  res.json(profileOf(getUser(req.user.id)));
+});
+
+router.delete("/api/profile/avatar", (req, res) => {
+  db.prepare("UPDATE users SET avatar = NULL WHERE id = ?").run(req.user.id);
+  res.json(profileOf(getUser(req.user.id)));
+});
+
 router.post("/api/profile/logout-everywhere", (req, res) => {
   db.prepare("UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = ?").run(req.user.id);
   res.json({ token: signToken(getUser(req.user.id)) });
@@ -152,6 +235,7 @@ router.delete("/api/profile", (req, res) => {
     db.prepare(`DELETE FROM incidents WHERE server_id IN ${own}`).run(u.id);
     db.prepare("DELETE FROM servers WHERE user_id = ?").run(u.id);
     db.prepare("DELETE FROM registrations WHERE user_id = ?").run(u.id);
+    db.prepare("DELETE FROM logins WHERE user_id = ?").run(u.id);
     db.prepare("DELETE FROM users WHERE id = ?").run(u.id);
     db.exec("COMMIT");
   } catch (e) {

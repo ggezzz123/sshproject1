@@ -7,7 +7,7 @@ const db = require("./db");
 require("./geo").backfillCountries();
 
 const app = express();
-// Behind Render's proxy req.ip would otherwise be the proxy's address. Only enable when a
+// Behind Fly's proxy req.ip would otherwise be the proxy's address. Only enable when a
 // proxy really sits in front, or clients could spoof their IP via X-Forwarded-For.
 if (process.env.TRUST_PROXY) {
   const v = process.env.TRUST_PROXY;

@@ -20,6 +20,14 @@ const FLASH = (() => {
   return "";
 })();
 
+// Password-reset token from the emailed link (/app#reset=...)
+const RESET_TOKEN = (() => {
+  const m = /[#&]reset=([^&]+)/.exec(location.hash);
+  if (!m) return "";
+  history.replaceState(null, "", location.pathname + location.search);
+  return decodeURIComponent(m[1]);
+})();
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -28,7 +36,11 @@ function setToken(t) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 function decodeToken(t) {
-  try { return JSON.parse(atob(t.split(".")[1])); } catch (e) { return null; }
+  // base64url + UTF-8, so non-English usernames (e.g. Thai) decode correctly
+  try {
+    const bin = atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(decodeURIComponent(Array.from(bin, (c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")));
+  } catch (e) { return null; }
 }
 
 async function api(path, opts = {}) {
@@ -134,14 +146,16 @@ function Captcha({ cfg, onChange }) {
   );
 }
 
-function Login({ onLogin }) {
-  const [mode, setMode] = useState("login");
+function Login({ onLogin, resetToken, onResetDone }) {
+  const [mode, setMode] = useState(resetToken ? "reset" : "login");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [captcha, setCaptcha] = useState({});
   const [cfg, setCfg] = useState({ providers: [] });
+  const [info, setInfo] = useState("");
   const [error, setError] = useState(() => {
     const m = /error=([^&]+)/.exec(location.hash);
     return m ? decodeURIComponent(m[1]) : "";
@@ -156,12 +170,29 @@ function Login({ onLogin }) {
   async function submit(e) {
     e.preventDefault();
     setError("");
-    if (mode === "register" && password !== confirm) {
+    setInfo("");
+    if ((mode === "register" || mode === "reset") && password !== confirm) {
       setError("Passwords do not match");
       return;
     }
     setLoading(true);
     try {
+      if (mode === "forgot") {
+        const d = await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ identifier }) });
+        setInfo(d.mail_configured
+          ? "If an account with that email or username exists, a reset link has been sent. Check your inbox (and spam)."
+          : "Email is not set up on this server yet, so no reset link can be sent. Ask the administrator.");
+        return;
+      }
+      if (mode === "reset") {
+        const d = await api("/api/auth/reset-password", { method: "POST",
+          body: JSON.stringify({ token: resetToken, new_password: password, confirm_password: confirm }) });
+        setPassword(""); setConfirm(""); setUsername(d.username || "");
+        setMode("login");
+        setInfo("Password changed. Sign in with your new password.");
+        onResetDone && onResetDone();
+        return;
+      }
       const body = mode === "register"
         ? { username, email, password, confirm_password: confirm, ...captcha }
         : { username, password };
@@ -169,15 +200,17 @@ function Login({ onLogin }) {
       setToken(data.token);
       onLogin(data.user);
     } catch (err) {
-      setError(err.message);
+      setError(err.message === "Unauthorized" && mode === "login" ? "Wrong username or password" : err.message);
       if (mode === "register") loadConfig(); // challenges are single-use
     } finally {
       setLoading(false);
     }
   }
 
-  function switchMode(m) { setMode(m); setError(""); loadConfig(); }
+  function switchMode(m) { setMode(m); setError(""); setInfo(""); loadConfig(); }
+  const link = (m, text) => <a href="#" onClick={(e) => { e.preventDefault(); switchMode(m); }}>{text}</a>;
   const oauthLabel = { google: "Google", github: "GitHub" };
+  const title = { login: "Sign In", register: "Create Account", forgot: "Send reset link", reset: "Set new password" }[mode];
 
   return (
     <div className="login-wrap">
@@ -185,38 +218,52 @@ function Login({ onLogin }) {
       <form className="login-card" onSubmit={submit}>
         <h1>SSH Monitor</h1>
         <div className="sub">
-          {new URLSearchParams(location.search).get("next") === "/get-key"
+          {mode === "forgot" ? "Forgot your password? We'll email you a reset link"
+            : mode === "reset" ? "Choose a new password"
+            : new URLSearchParams(location.search).get("next") === "/get-key"
             ? "Sign in or register to get your API key"
             : "Security monitoring system"}
         </div>
+        {info && <div className="ok-banner">{info}</div>}
         {error && <div className="error-banner">{error}</div>}
-        <div className="field">
-          <label>Username</label>
-          <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-        </div>
+        {mode === "forgot" && (
+          <div className="field">
+            <label>Email or username</label>
+            <input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoFocus required />
+          </div>
+        )}
+        {(mode === "login" || mode === "register") && (
+          <div className="field">
+            <label>Username</label>
+            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+          </div>
+        )}
         {mode === "register" && (
           <div className="field">
-            <label>Email (optional)</label>
+            <label>Email (optional, needed to reset a forgotten password)</label>
             <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
         )}
-        <div className="field">
-          <label>Password</label>
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-        {mode === "register" && (
-          <>
-            <div className="field">
-              <label>Confirm password</label>
-              <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            </div>
-            <Captcha key={cfg.challenge ? cfg.challenge.token : "ts"} cfg={cfg} onChange={setCaptcha} />
-          </>
+        {mode !== "forgot" && (
+          <div className="field">
+            <label style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{mode === "reset" ? "New password (min 6 characters)" : "Password"}</span>
+              {mode === "login" && <span style={{ fontWeight: 400 }}>{link("forgot", "Forgot password?")}</span>}
+            </label>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={mode === "reset"} />
+          </div>
         )}
+        {(mode === "register" || mode === "reset") && (
+          <div className="field">
+            <label>Confirm password</label>
+            <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+        )}
+        {mode === "register" && <Captcha key={cfg.challenge ? cfg.challenge.token : "ts"} cfg={cfg} onChange={setCaptcha} />}
         <button className="btn primary" style={{ width: "100%" }} disabled={loading}>
-          {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
+          {loading ? "Please wait..." : title}
         </button>
-        {cfg.providers.length > 0 && (
+        {(mode === "login" || mode === "register") && cfg.providers.length > 0 && (
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>or</div>
             {cfg.providers.map((p) => (
@@ -228,11 +275,9 @@ function Login({ onLogin }) {
           </div>
         )}
         <div style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-          {mode === "login" ? (
-            <>No account? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("register"); }}>Register</a></>
-          ) : (
-            <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("login"); }}>Sign in</a></>
-          )}
+          {mode === "login" ? <>No account? {link("register", "Register")}</>
+            : mode === "register" ? <>Already have an account? {link("login", "Sign in")}</>
+            : <>{link("login", "Back to sign in")}</>}
         </div>
       </form>
     </div>
@@ -1299,7 +1344,82 @@ function AttackGlobe({ rows, selected, onSelect }) {
 }
 
 /* ---------- Profile ---------- */
-function Profile({ onToken, onDeleted, flash }) {
+function Avatar({ name, src, large }) {
+  const cls = "avatar" + (large ? " lg" : "");
+  return src
+    ? <img className={cls} src={src} alt="" />
+    : <span className={cls} aria-hidden="true">{(name || "?").charAt(0).toUpperCase()}</span>;
+}
+
+// Center-crop to a square and shrink to 256x256 JPEG in the browser, so uploads stay small (~20-40 KB)
+function resizeAvatar(file) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\//.test(file.type)) return reject(new Error("Please choose an image file"));
+    if (file.size > 15 * 1024 * 1024) return reject(new Error("Image is too large (max 15 MB)"));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const size = 256;
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const c = document.createElement("canvas");
+      c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read that image")); };
+    img.src = url;
+  });
+}
+
+function deviceOf(ua) {
+  if (!ua) return "Unknown device";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"
+    : /Chrome\//.test(ua) ? "Chrome" : /Version\/.*Safari/.test(ua) ? "Safari" : /curl\//.test(ua) ? "curl" : "Browser";
+  const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iOS"
+    : /Mac OS X|Macintosh/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+const METHOD_LABEL = { password: "Password", register: "Sign-up", google: "Google", github: "GitHub" };
+
+function LoginHistory() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { api("/api/profile/logins").then(setRows).catch(() => setRows([])); }, []);
+  const failed = rows ? rows.filter((r) => !r.success).length : 0;
+  return (
+    <section className="card" style={{ gridColumn: "1 / -1" }}>
+      <h4 style={{ marginBottom: 8 }}>Sign-in history</h4>
+      <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>
+        The last {rows ? rows.length : ""} sign-ins to your account. If you see one you don't recognise, change your password and sign out other devices.
+        {failed > 0 && <> <b style={{ color: "var(--red-text)" }}>{failed} failed attempt(s)</b> with a wrong password.</>}
+      </div>
+      {!rows ? <div className="empty">Loading...</div> : !rows.length ? <div className="empty">No sign-ins recorded yet</div> : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Result</th><th>Method</th><th>IP address</th><th>Location</th><th>Device</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="mono">{fmtTime(r.created_at)}</td>
+                  <td><Chip kind={r.success ? "success" : "error"}>{r.success ? "success" : "failed"}</Chip></td>
+                  <td>{METHOD_LABEL[r.method] || r.method}</td>
+                  <td className="mono">{r.ip_address || "-"}</td>
+                  <td>{r.country && r.country !== "??" ? countryName(r.country) : "-"}</td>
+                  <td title={r.user_agent || ""}>{deviceOf(r.user_agent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Profile({ onToken, onDeleted, flash, onProfile }) {
   const [p, setP] = useState(null);
   const [notice, setNotice] = useState({ ok: flash || "", err: "" });
   const [email, setEmail] = useState("");
@@ -1309,7 +1429,7 @@ function Profile({ onToken, onDeleted, flash }) {
   const [busy, setBusy] = useState("");
 
   const load = useCallback(() => {
-    api("/api/profile").then((d) => { setP(d); setEmail(d.email || ""); }).catch((e) => setNotice({ ok: "", err: e.message }));
+    api("/api/profile").then((d) => { setP(d); setEmail(d.email || ""); onProfile && onProfile(d); }).catch((e) => setNotice({ ok: "", err: e.message }));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -1331,6 +1451,23 @@ function Profile({ onToken, onDeleted, flash }) {
   const resend = () => run("resend", async () => {
     const d = await api("/api/profile/email/verify-request", { method: "POST" });
     ok(mailNote(d.verification_sent));
+  });
+  const fileRef = useRef(null);
+  const pickAvatar = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    run("avatar", async () => {
+      const image = await resizeAvatar(file);
+      const d = await api("/api/profile/avatar", { method: "PUT", body: JSON.stringify({ image }) });
+      setP(d); onProfile && onProfile(d);
+      ok("Profile picture updated.");
+    });
+  };
+  const removeAvatar = () => run("avatar", async () => {
+    const d = await api("/api/profile/avatar", { method: "DELETE" });
+    setP(d); onProfile && onProfile(d);
+    ok("Profile picture removed.");
   });
   const savePw = (e) => { e.preventDefault(); run("pw", async () => {
     const d = await api("/api/profile/password", { method: "POST",
@@ -1357,9 +1494,23 @@ function Profile({ onToken, onDeleted, flash }) {
 
   return (
     <div>
-      <div className="page-title">
-        <h1>Profile</h1>
-        <div className="sub">Your account, email and security</div>
+      <div className="page-title profile-head">
+        <button type="button" className="avatar-edit" onClick={() => fileRef.current.click()} disabled={busy === "avatar"}
+          title="Change profile picture" aria-label="Change profile picture">
+          <Avatar name={p.username} src={p.avatar} large />
+          <span className="avatar-cam" aria-hidden="true">{busy === "avatar" ? "…" : "✎"}</span>
+        </button>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={pickAvatar} hidden />
+        <div>
+          <h1>{p.username}</h1>
+          <div className="sub">{p.email || "No email"} · {p.role === "admin" ? "Admin" : "User"} · your account, email and security</div>
+          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+            <button type="button" className="btn secondary sm" disabled={busy === "avatar"} onClick={() => fileRef.current.click()}>
+              {p.avatar ? "Change picture" : "Upload picture"}
+            </button>
+            {p.avatar && <button type="button" className="btn ghost sm" disabled={busy === "avatar"} onClick={removeAvatar}>Remove</button>}
+          </div>
+        </div>
       </div>
       {notice.ok && <div className="ok-banner">{notice.ok}</div>}
       {notice.err && <div className="error-banner">{notice.err}</div>}
@@ -1422,6 +1573,8 @@ function Profile({ onToken, onDeleted, flash }) {
           <button className="btn secondary" disabled={busy === "all"} onClick={signOutAll}>Sign out other devices</button>
         </section>
 
+        <LoginHistory />
+
         {p.role !== "admin" && (
           <section className="card" style={{ boxShadow: "inset 3px 0 0 var(--red)" }}>
             <h4 style={{ marginBottom: 8, color: "var(--red-text)" }}>Delete account</h4>
@@ -1447,7 +1600,6 @@ const PAGES = [
   { key: "logs", label: "Logs", icon: "≡" },
   { key: "incidents", label: "Incidents", icon: "⚠" },
   { key: "users", label: "Users", icon: "◉" },
-  { key: "profile", label: "Profile", icon: "☺" },
 ];
 
 function App() {
@@ -1458,7 +1610,14 @@ function App() {
     return payload ? payload.role : null;
   });
   const [page, setPage] = useState(FLASH ? "profile" : "dashboard");
+  const [resetToken, setResetToken] = useState(RESET_TOKEN);
   const isAdmin = role === "admin";
+  const username = ((authed && decodeToken(getToken() || "")) || {}).username || "";
+  const [me, setMe] = useState(null);
+  useEffect(() => {
+    if (authed) api("/api/profile").then(setMe).catch(() => {});
+    else setMe(null);
+  }, [authed]);
   const pages = PAGES.filter((p) => p.key !== "users" || isAdmin);
 
   function handleLogin(user) {
@@ -1478,8 +1637,10 @@ function App() {
   }
   function handleLogout() { setToken(null); setAuthed(false); setRole(null); setPage("dashboard"); }
 
-  if (!authed) {
-    return <Login onLogin={handleLogin} />;
+  if (resetToken || !authed) {
+    // A reset link always shows the reset form; afterwards every session is signed out (server-side too)
+    return <Login onLogin={handleLogin} resetToken={resetToken}
+      onResetDone={() => { setResetToken(""); setToken(null); setAuthed(false); setRole(null); }} />;
   }
 
   return (
@@ -1504,12 +1665,17 @@ function App() {
         </div>
       </aside>
       <main className="main">
+        <button type="button" className={"user-chip" + (page === "profile" ? " active" : "")} onClick={() => setPage("profile")}
+          title="Your profile" aria-label={`Open profile of ${username}`}>
+          <span className="who"><b>{username}</b><span>{isAdmin ? "Admin" : "User"} · Profile</span></span>
+          <Avatar name={username} src={me && me.avatar} />
+        </button>
         {page === "dashboard" && <Dashboard />}
         {page === "servers" && <Servers />}
         {page === "logs" && <Logs />}
         {page === "incidents" && <Incidents />}
         {page === "users" && isAdmin && <Users />}
-        {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} />}
+        {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} onProfile={setMe} />}
       </main>
     </div>
   );

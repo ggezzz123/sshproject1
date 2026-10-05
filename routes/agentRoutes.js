@@ -98,41 +98,4 @@ router.post("/api/logs", apiKeyAuth, (req, res) => {
   }
 });
 
-// note.md-style agent endpoints
-router.post("/api/agent/logs", apiKeyAuth, (req, res) => {
-  try {
-    const { received } = ingestLogs(req.body, req.apiKey, req.ip, req.server);
-    res.json({ status: "success", received });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Internal error" });
-  }
-});
-
-router.post("/api/agent/register", apiKeyAuth, (req, res) => {
-  const { serverId, hostname, ip_address } = req.body || {};
-  const name = serverId || hostname || "unknown";
-  let server = db.prepare("SELECT * FROM servers WHERE hostname = ?").get(name);
-  if (!server) {
-    const info = db
-      .prepare(
-        "INSERT INTO servers (name, hostname, ip_address, api_key, status, last_seen) VALUES (?, ?, ?, ?, 'online', datetime('now'))"
-      )
-      .run(name, name, ip_address || null, req.apiKey);
-    server = db.prepare("SELECT * FROM servers WHERE id = ?").get(info.lastInsertRowid);
-  }
-  res.json({ status: "success", serverId: server.id });
-});
-
-router.post("/api/agent/heartbeat", apiKeyAuth, (req, res) => {
-  const { serverId, hostname } = req.body || {};
-  const key = serverId || hostname;
-  if (key) {
-    db.prepare(
-      "UPDATE servers SET status = 'online', last_seen = datetime('now') WHERE hostname = ? OR id = ?"
-    ).run(key, Number.isInteger(key) ? key : -1);
-  }
-  res.json({ status: "success" });
-});
-
 module.exports = router;

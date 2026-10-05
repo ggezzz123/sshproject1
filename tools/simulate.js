@@ -227,7 +227,7 @@ function ask(question) {
 async function promptForSettings() {
   let askedKey = false;
   if (!URL_GIVEN) {
-    const u = await ask(`Monitor URL [${DEFAULT_URL}] (Enter = local; Render: https://<your-service>.onrender.com): `);
+    const u = await ask(`Monitor URL [${DEFAULT_URL}] (Enter = local; e.g. https://ssh-monitor.fly.dev): `);
     if (u) {
       const local = /^(localhost|127\.|10\.|192\.168\.|\[?::1)/i.test(u);
       URL_BASE = cleanUrl(/^https?:\/\//i.test(u) ? u : (local ? "http://" : "https://") + u);

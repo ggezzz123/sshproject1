@@ -72,10 +72,22 @@ addColumns("users", {
   email_verified: "INTEGER DEFAULT 0",
   last_login_at: "DATETIME",
   token_version: "INTEGER DEFAULT 0",
+  avatar: "TEXT",
 });
 addColumns("ssh_logs", { country: "VARCHAR(2)" });
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id) WHERE provider_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS logins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    method VARCHAR(20) NOT NULL,
+    success INTEGER NOT NULL,
+    ip_address VARCHAR(45),
+    country VARCHAR(2),
+    user_agent TEXT,
+    created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_logins_user ON logins(user_id, id);
 CREATE TABLE IF NOT EXISTS registrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
