@@ -2,6 +2,7 @@ const express = require("express");
 const db = require("../db");
 const { apiKeyAuth } = require("../middleware/auth");
 const { analyzeBatch } = require("../analysisEngine");
+const { countryOf } = require("../geo");
 
 const router = express.Router();
 
@@ -50,7 +51,7 @@ function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
   }
 
   const insert = db.prepare(
-    "INSERT INTO ssh_logs (server_id, event_time, source_ip, username, event_type, severity, message) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO ssh_logs (server_id, event_time, source_ip, username, event_type, severity, message, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   const normalized = logs.map((log) => {
@@ -69,7 +70,7 @@ function ingestLogs(payload, apiKey, remoteIp, matchedServer) {
   db.exec("BEGIN");
   try {
     for (const l of normalized) {
-      insert.run(server.id, l.event_time, l.ip, l.user, l.type, l.severity, l.message);
+      insert.run(server.id, l.event_time, l.ip, l.user, l.type, l.severity, l.message, countryOf(l.ip));
     }
     db.exec("COMMIT");
   } catch (e) {

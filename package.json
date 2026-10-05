@@ -16,7 +16,9 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "geoip-country": "^5.0.202610030217",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^10.0.15",
     "oracledb": "^7.0.1"
   }
 }

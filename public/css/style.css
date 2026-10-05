@@ -461,6 +461,23 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--text); m
   font-size: 13px;
 }
 
+.ok-banner {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start; }
+.profile-grid > * { min-width: 0; }
+.kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; font-size: 14px; }
+.kv dt { color: var(--text-muted); }
+.kv dd { margin: 0; word-break: break-all; }
+.globe-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .globe-row { grid-template-columns: 1fr; } }
+
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar .input { width: auto; min-width: 180px; flex: 1 1 180px; max-width: 260px; }
 

@@ -69,7 +69,11 @@ addColumns("users", {
   provider: "VARCHAR(20) DEFAULT 'local'",
   provider_id: "VARCHAR(100)",
   created_at: "DATETIME",
+  email_verified: "INTEGER DEFAULT 0",
+  last_login_at: "DATETIME",
+  token_version: "INTEGER DEFAULT 0",
 });
+addColumns("ssh_logs", { country: "VARCHAR(2)" });
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id) WHERE provider_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS registrations (
@@ -93,6 +97,7 @@ addColumns("incidents", {
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_logs_server_time ON ssh_logs(server_id, event_time);
 CREATE INDEX IF NOT EXISTS idx_logs_user ON ssh_logs(username);
+CREATE INDEX IF NOT EXISTS idx_logs_country ON ssh_logs(country);
 CREATE INDEX IF NOT EXISTS idx_incidents_key ON incidents(server_id, attack_type, incident_key, status);
 `);
 

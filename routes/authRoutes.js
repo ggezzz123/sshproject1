@@ -113,6 +113,7 @@ router.post("/api/auth/login", (req, res) => {
   if (!user || (user.provider && user.provider !== "local") || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
+  db.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").run(new Date().toISOString(), user.id);
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -133,12 +134,19 @@ router.post("/api/auth/register", async (req, res) => {
   if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) {
     return res.status(409).json({ error: "username already taken" });
   }
+  const mail = email ? String(email).trim().toLowerCase() : null;
+  if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+    return res.status(400).json({ error: "Invalid email address" });
+  }
+  if (mail && db.prepare("SELECT 1 FROM users WHERE lower(email) = ?").get(mail)) {
+    return res.status(409).json({ error: "email already used by another account" });
+  }
   const hash = bcrypt.hashSync(password, 10);
   const info = db
     .prepare(
       "INSERT INTO users (username, password_hash, role, email, provider, created_at) VALUES (?, ?, 'user', ?, 'local', ?)"
     )
-    .run(username, hash, email || null, new Date().toISOString());
+    .run(username, hash, mail, new Date().toISOString());
   recordRegistration(info.lastInsertRowid, "local", req);
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
   res.json({ token: signToken(user), user: publicUser(user) });
@@ -187,14 +195,14 @@ async function fetchProfile(provider, p, code, redirectUri) {
   if (provider === "google") {
     const u = await (await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: h })).json();
     if (!u.sub) throw new Error("no profile");
-    return { id: String(u.sub), email: u.email_verified ? u.email : null, name: u.name || (u.email || "").split("@")[0] };
+    return { id: String(u.sub), email: u.email_verified ? u.email : null, verified: !!u.email_verified, name: u.name || (u.email || "").split("@")[0] };
   }
   const u = await (await fetch("https://api.github.com/user", { headers: h })).json();
   if (!u.id) throw new Error("no profile");
   let email = null;
   const emails = await (await fetch("https://api.github.com/user/emails", { headers: h })).json();
   if (Array.isArray(emails)) email = (emails.find((e) => e.primary && e.verified) || {}).email || null;
-  return { id: String(u.id), email, name: u.login };
+  return { id: String(u.id), email, verified: !!email, name: u.login };
 }
 
 router.get("/api/auth/oauth/:provider/callback", async (req, res) => {
@@ -216,12 +224,13 @@ router.get("/api/auth/oauth/:provider/callback", async (req, res) => {
       // "!" is not a valid bcrypt hash, so password login can never succeed for OAuth accounts
       const info = db
         .prepare(
-          "INSERT INTO users (username, password_hash, role, email, provider, provider_id, created_at) VALUES (?, '!', 'user', ?, ?, ?, ?)"
+          "INSERT INTO users (username, password_hash, role, email, email_verified, provider, provider_id, created_at) VALUES (?, '!', 'user', ?, ?, ?, ?, ?)"
         )
-        .run(username, prof.email, provider, prof.id, new Date().toISOString());
+        .run(username, prof.email ? prof.email.toLowerCase() : null, prof.verified ? 1 : 0, provider, prof.id, new Date().toISOString());
       recordRegistration(info.lastInsertRowid, provider, req);
       user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
     }
+    db.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").run(new Date().toISOString(), user.id);
     res.setHeader("Set-Cookie", "oauth_state=; Path=/api/auth; Max-Age=0");
     res.redirect("/app#token=" + signToken(user));
   } catch (e) {

@@ -90,6 +90,16 @@ router.get("/dashboard/analytics", (req, res) => {
     )
     .all(...cur.params);
 
+  // Where the failed attempts came from (private / unknown IPs are left out)
+  const byCountry = db
+    .prepare(
+      `SELECT l.country AS code, COALESCE(SUM(${FAIL_SQL}),0) AS failed, COALESCE(SUM(l.event_type = 'ssh_login_success'),0) AS success,
+        COUNT(DISTINCT CASE WHEN ${FAIL_SQL} THEN l.source_ip END) AS ips, COUNT(DISTINCT l.server_id) AS hosts, MAX(l.event_time) AS last_seen
+       FROM ssh_logs l ${cur.sql} AND l.country IS NOT NULL AND l.country != '??'
+       GROUP BY l.country HAVING failed > 0 ORDER BY failed DESC, ips DESC LIMIT 100`
+    )
+    .all(...cur.params);
+
   // Incidents active during the selected period (same permission + server filter)
   const isc = serverScope(req, "i.server_id");
   const iWhere = [...isc.clauses, "julianday(COALESCE(i.last_seen, i.detected_at)) >= julianday(?)"];
@@ -114,7 +124,7 @@ router.get("/dashboard/analytics", (req, res) => {
       ? db.prepare("SELECT id, name, hostname FROM servers ORDER BY name").all()
       : db.prepare("SELECT id, name, hostname FROM servers WHERE user_id = ? ORDER BY name").all(req.user.id);
 
-  res.json({ range, from, to: now, bucketMs, kpis, series, bySeverity, byType, topIps, topUsers, incidents, servers });
+  res.json({ range, from, to: now, bucketMs, kpis, series, bySeverity, byType, topIps, topUsers, byCountry, incidents, servers });
 });
 
 router.get("/analysis/ip/:ip", (req, res) => {

@@ -11,6 +11,15 @@ const TOKEN_KEY = "ssh_monitor_token";
   }
 })();
 
+// Banner text from an OAuth / email-verification redirect (/app#verified=1), shown once on the next screen.
+const FLASH = (() => {
+  if (/[#&]verified=1/.test(location.hash)) {
+    history.replaceState(null, "", location.pathname + location.search);
+    return "Email verified. Thank you!";
+  }
+  return "";
+})();
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -261,6 +270,13 @@ const SEVERITIES = [
 const RANGE_LABEL = { "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days", all: "All time" };
 const PREV_LABEL = { "24h": "previous 24h", "7d": "previous 7 days", "30d": "previous 30 days" };
 
+const regionNames = (() => {
+  try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { return null; }
+})();
+function countryName(code) {
+  try { return (regionNames && regionNames.of(code)) || code; } catch (e) { return code; }
+}
+
 function fmtNum(n) {
   if (n == null) return "-";
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
@@ -420,7 +436,7 @@ function Donut({ data, centerLabel }) {
   );
 }
 
-function HBars({ data, color, unit, onSelect, empty }) {
+function HBars({ data, color, unit, onSelect, empty, hint }) {
   const [tip, show, hide] = useTip();
   const max = Math.max(1, ...data.map((d) => d.value));
   if (!data.length) return <div className="viz-empty">{empty || "Nothing to show"}</div>;
@@ -431,7 +447,7 @@ function HBars({ data, color, unit, onSelect, empty }) {
           <>
             <div className="r"><span className="sw" style={{ background: color }} />{d.label}<b>{fmtNum(d.value)} {unit}</b></div>
             {d.meta && <div className="t">{d.meta}</div>}
-            {onSelect && <div className="t">Click to analyze</div>}
+            {onSelect && <div className="t">{hint || "Click to analyze"}</div>}
           </>
         );
         return (
@@ -657,6 +673,7 @@ function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [analyze, setAnalyze] = useState(null);
+  const [country, setCountry] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -791,6 +808,21 @@ function Dashboard() {
                 rows: RISK_META.map((r) => ({ label: r.key, value: riskMap[r.key] || 0 })) }}>
               <RiskRows data={riskMap} />
             </ChartCard>
+
+            <section className="card viz-card span-12">
+              <div className="viz-head">
+                <div><h3>Attacks by country</h3><div className="sub">Failed login attempts by the country of the source IP · drag the globe to rotate</div></div>
+              </div>
+              <div className="globe-row">
+                <div className="globe-main"><AttackGlobe rows={data ? data.byCountry : []} selected={country} onSelect={setCountry} /></div>
+                <div className="globe-side">
+                  <HBars color="var(--text-muted)" unit="failed attempts" empty="No attacks with a known country in this period"
+                    onSelect={(d) => setCountry(d.key)} hint="Click to show on the globe"
+                    data={(data ? data.byCountry : []).slice(0, 10).map((r) => ({ key: r.code, label: `${countryName(r.code)} (${r.code})`, value: r.failed,
+                      meta: `${r.ips} unique IP(s) · ${r.hosts} server(s)` }))} />
+                </div>
+              </div>
+            </section>
 
             <section className="card viz-card span-12">
               <div className="viz-head"><div><h3>Attack incidents</h3><div className="sub">Highest risk first · open incidents on top</div></div></div>
@@ -1092,6 +1124,322 @@ function Users() {
   );
 }
 
+/* ---------- 3D attack globe (globe.gl, loaded on first use) ---------- */
+const GLOBE_SRC = "https://unpkg.com/globe.gl@2.46.2/dist/globe.gl.min.js";
+let globeAssets = null;
+function loadGlobeAssets() {
+  if (!globeAssets) {
+    const lib = window.Globe ? Promise.resolve() : new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = GLOBE_SRC;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("Could not load the 3D globe library"));
+      document.head.appendChild(s);
+    });
+    const geo = fetch("/data/countries.geojson").then((r) => {
+      if (!r.ok) throw new Error("Could not load the country map");
+      return r.json();
+    });
+    globeAssets = Promise.all([lib, geo]).then(([, g]) => g).catch((e) => { globeAssets = null; throw e; });
+  }
+  return globeAssets;
+}
+
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+// Center of the biggest ring of a country, used to turn the globe towards it
+function featureCenter(f) {
+  const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+  let best = null;
+  for (const p of polys) {
+    const ring = p[0];
+    let minX = 180, maxX = -180, minY = 90, maxY = -90;
+    for (const [x, y] of ring) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+    const area = (maxX - minX) * (maxY - minY);
+    if (!best || area > best.area) best = { area, lng: (minX + maxX) / 2, lat: (minY + maxY) / 2 };
+  }
+  return best || { lat: 0, lng: 0 };
+}
+
+function AttackGlobe({ rows, selected, onSelect }) {
+  const boxRef = useRef(null);
+  const globeRef = useRef(null);
+  const geoRef = useRef(null);
+  const hoverRef = useRef(null);
+  const statsRef = useRef({ byCode: new Map(), max: 1 });
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
+  const [spin, setSpin] = useState(true);
+  const width = useWidth(boxRef);
+
+  // Visual encoding: the world is black & white; countries that attacked turn red (deeper = more attempts)
+  const paint = useCallback(() => {
+    const g = globeRef.current;
+    if (!g) return;
+    const { byCode, max } = statsRef.current;
+    // Fixed black & white world (same in light and dark theme); red is used for attacking countries only
+    const mix = (t) => {
+      // #ef4444 (red) -> #7f1d1d (deep red)
+      const from = [239, 68, 68], to = [127, 29, 29];
+      return `rgb(${from.map((c, i) => Math.round(c + (to[i] - c) * t)).join(",")})`;
+    };
+    const level = (f) => {
+      const r = byCode.get(f.properties.iso);
+      return r ? Math.log1p(r.failed) / Math.log1p(max) : -1;
+    };
+    g.globeMaterial().color.set("#7a7a7a");
+    g.atmosphereColor("#ffffff");
+    g.polygonCapColor((f) => {
+      const l = level(f);
+      return l >= 0 ? mix(l) : "#ffffff";
+    })
+      .polygonSideColor((f) => (level(f) >= 0 ? "#7f1d1d" : "rgba(60, 60, 60, 0.6)"))
+      .polygonStrokeColor(() => "#3a3a3a")
+      .polygonAltitude((f) => (f === hoverRef.current ? 0.08 : 0.006 + 0.06 * Math.max(0, level(f))))
+      .polygonLabel((f) => {
+        const r = byCode.get(f.properties.iso);
+        const name = f.properties.name;
+        return `<div style="background:rgba(15,17,22,.92);color:#fff;padding:8px 10px;border-radius:6px;font:12px Inter,sans-serif;line-height:1.5">
+          <b>${name}</b>${r ? `<br>${fmtNum(r.failed)} failed attempt(s)<br>${r.ips} unique IP(s) · ${r.hosts} server(s)` : "<br>No attacks"}</div>`;
+      });
+  }, []);
+
+  // Create the globe once
+  useEffect(() => {
+    let dead = false;
+    loadGlobeAssets()
+      .then((geo) => {
+        if (dead || !boxRef.current) return;
+        geoRef.current = geo;
+        const g = window.Globe()(boxRef.current)
+          .backgroundColor("rgba(0,0,0,0)")
+          .showAtmosphere(true)
+          .atmosphereAltitude(0.15)
+          .polygonsData(geo.features)
+          .polygonsTransitionDuration(300)
+          .onPolygonHover((f) => {
+            hoverRef.current = f;
+            boxRef.current && (boxRef.current.style.cursor = f ? "pointer" : "grab");
+            paint();
+          })
+          .onPolygonClick((f) => onSelectRef.current(f.properties.iso));
+        const c = g.controls();
+        c.autoRotate = true;
+        c.autoRotateSpeed = 0.6;
+        c.minDistance = 130;
+        c.maxDistance = 600;
+        g.pointOfView({ lat: 15, lng: 100, altitude: 2.2 });
+        globeRef.current = g;
+        paint();
+        setReady(true);
+      })
+      .catch((e) => !dead && setError(e.message));
+    return () => {
+      dead = true;
+      const g = globeRef.current;
+      if (g) { g.pauseAnimation(); g._destructor && g._destructor(); }
+      globeRef.current = null;
+    };
+  }, [paint]);
+
+  // New data -> repaint
+  useEffect(() => {
+    statsRef.current = { byCode: new Map(rows.map((r) => [r.code, r])), max: Math.max(1, ...rows.map((r) => r.failed)) };
+    paint();
+  }, [rows, ready, paint]);
+
+  // Follow the container size
+  useEffect(() => {
+    const g = globeRef.current;
+    if (g && width) g.width(width).height(Math.min(520, Math.max(300, width * 0.6)));
+  }, [width, ready]);
+
+  useEffect(() => {
+    if (globeRef.current) globeRef.current.controls().autoRotate = spin;
+  }, [spin, ready]);
+
+  // Turn towards the selected country
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !selected || !geoRef.current) return;
+    const f = geoRef.current.features.find((x) => x.properties.iso === selected);
+    if (!f) return;
+    setSpin(false);
+    g.pointOfView({ ...featureCenter(f), altitude: 1.6 }, 1000);
+  }, [selected, ready]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      {error ? (
+        <div className="viz-empty">{error}. Your browser may not support WebGL.</div>
+      ) : (
+        <>
+          <div ref={boxRef} style={{ width: "100%", minHeight: 300, cursor: "grab", touchAction: "none" }} aria-label="3D globe of attacking countries" />
+          {!ready && <div className="viz-empty" style={{ position: "absolute", inset: 0 }}>Loading globe...</div>}
+          {ready && (
+            <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
+              <button type="button" className="btn ghost sm" onClick={() => setSpin((s) => !s)}>{spin ? "Pause" : "Spin"}</button>
+              <button type="button" className="btn ghost sm" onClick={() => { onSelect(""); setSpin(true); globeRef.current.pointOfView({ lat: 15, lng: 100, altitude: 2.2 }, 800); }}>Reset</button>
+            </div>
+          )}
+          {ready && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+              Drag to rotate · scroll to zoom · hover a country for details · click it (or a table row) to focus
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Profile ---------- */
+function Profile({ onToken, onDeleted, flash }) {
+  const [p, setP] = useState(null);
+  const [notice, setNotice] = useState({ ok: flash || "", err: "" });
+  const [email, setEmail] = useState("");
+  const [emailPw, setEmailPw] = useState("");
+  const [pw, setPw] = useState({ cur: "", next: "", confirm: "" });
+  const [delPw, setDelPw] = useState("");
+  const [busy, setBusy] = useState("");
+
+  const load = useCallback(() => {
+    api("/api/profile").then((d) => { setP(d); setEmail(d.email || ""); }).catch((e) => setNotice({ ok: "", err: e.message }));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const ok = (m) => setNotice({ ok: m, err: "" });
+  const bad = (m) => setNotice({ ok: "", err: m });
+  async function run(name, fn) {
+    setBusy(name);
+    setNotice({ ok: "", err: "" });
+    try { await fn(); } catch (e) { bad(e.message); } finally { setBusy(""); }
+  }
+
+  const mailNote = (sent) => sent ? "A verification email was sent - open the link in it." :
+    "Email saved. This server has no mail (SMTP) configured, so no email could be sent - ask the administrator.";
+
+  const saveEmail = (e) => { e.preventDefault(); run("email", async () => {
+    const d = await api("/api/profile/email", { method: "PATCH", body: JSON.stringify({ email, current_password: emailPw }) });
+    setP(d); setEmailPw(""); ok(mailNote(d.verification_sent));
+  }); };
+  const resend = () => run("resend", async () => {
+    const d = await api("/api/profile/email/verify-request", { method: "POST" });
+    ok(mailNote(d.verification_sent));
+  });
+  const savePw = (e) => { e.preventDefault(); run("pw", async () => {
+    const d = await api("/api/profile/password", { method: "POST",
+      body: JSON.stringify({ current_password: pw.cur, new_password: pw.next, confirm_password: pw.confirm }) });
+    setToken(d.token); onToken();
+    setPw({ cur: "", next: "", confirm: "" });
+    ok("Password changed. Other devices were signed out.");
+  }); };
+  const signOutAll = () => run("all", async () => {
+    const d = await api("/api/profile/logout-everywhere", { method: "POST" });
+    setToken(d.token); onToken();
+    ok("Signed out of all other devices.");
+  });
+  const del = (e) => { e.preventDefault();
+    if (!confirm("Delete your account and ALL your servers, logs and incidents? This cannot be undone.")) return;
+    run("del", async () => {
+      await api("/api/profile", { method: "DELETE", body: JSON.stringify(p.has_password ? { password: delPw } : { confirm_username: delPw }) });
+      onDeleted();
+    });
+  };
+
+  if (!p) return <div className="empty">{notice.err || "Loading..."}</div>;
+  const providerLabel = p.provider === "local" ? "Username & password" : p.provider === "google" ? "Google" : "GitHub";
+
+  return (
+    <div>
+      <div className="page-title">
+        <h1>Profile</h1>
+        <div className="sub">Your account, email and security</div>
+      </div>
+      {notice.ok && <div className="ok-banner">{notice.ok}</div>}
+      {notice.err && <div className="error-banner">{notice.err}</div>}
+      <div className="profile-grid">
+        <section className="card">
+          <h4 style={{ marginBottom: 14 }}>Account</h4>
+          <dl className="kv" style={{ margin: 0 }}>
+            <dt>Username</dt><dd>{p.username}</dd>
+            <dt>Role</dt><dd><Chip kind={p.role === "admin" ? "info" : "muted"}>{p.role}</Chip></dd>
+            <dt>Sign-in method</dt><dd>{providerLabel}</dd>
+            <dt>Member since</dt><dd>{p.created_at ? fmtTime(p.created_at) : "-"}</dd>
+            <dt>Last sign-in</dt><dd>{p.last_login_at ? fmtTime(p.last_login_at) : "-"}</dd>
+            <dt>Servers</dt><dd>{p.servers} <a href="/get-key" style={{ marginLeft: 8 }}>Manage keys</a></dd>
+          </dl>
+        </section>
+
+        <section className="card">
+          <h4 style={{ marginBottom: 14 }}>Email</h4>
+          <div style={{ marginBottom: 14, fontSize: 14 }}>
+            {p.email ? <>{p.email} <Chip kind={p.email_verified ? "success" : "warning"}>{p.email_verified ? "verified" : "not verified"}</Chip></> : "No email set"}
+            {p.email && !p.email_verified && (
+              <button type="button" className="btn ghost sm" style={{ marginLeft: 8 }} disabled={busy === "resend"} onClick={resend}>Resend email</button>
+            )}
+          </div>
+          <form onSubmit={saveEmail}>
+            <div className="field">
+              <label>{p.email ? "New email" : "Email"}</label>
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            {p.has_password && (
+              <div className="field">
+                <label>Current password</label>
+                <input className="input" type="password" value={emailPw} onChange={(e) => setEmailPw(e.target.value)} required />
+              </div>
+            )}
+            <button className="btn primary" disabled={busy === "email"}>{busy === "email" ? "Saving..." : "Save email"}</button>
+          </form>
+        </section>
+
+        <section className="card">
+          <h4 style={{ marginBottom: 14 }}>Password</h4>
+          {p.has_password ? (
+            <form onSubmit={savePw}>
+              <div className="field"><label>Current password</label>
+                <input className="input" type="password" value={pw.cur} onChange={(e) => setPw({ ...pw, cur: e.target.value })} required /></div>
+              <div className="field"><label>New password (min 6 characters)</label>
+                <input className="input" type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} required /></div>
+              <div className="field"><label>Confirm new password</label>
+                <input className="input" type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} required /></div>
+              <button className="btn primary" disabled={busy === "pw"}>{busy === "pw" ? "Saving..." : "Change password"}</button>
+            </form>
+          ) : (
+            <div style={{ color: "var(--text-muted)", fontSize: 14 }}>This account signs in with {providerLabel}, so there is no password to change here.</div>
+          )}
+        </section>
+
+        <section className="card">
+          <h4 style={{ marginBottom: 8 }}>Sessions</h4>
+          <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>Sign out of every other browser or device where you are logged in. This device stays signed in.</div>
+          <button className="btn secondary" disabled={busy === "all"} onClick={signOutAll}>Sign out other devices</button>
+        </section>
+
+        {p.role !== "admin" && (
+          <section className="card" style={{ boxShadow: "inset 3px 0 0 var(--red)" }}>
+            <h4 style={{ marginBottom: 8, color: "var(--red-text)" }}>Delete account</h4>
+            <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>Permanently deletes your account, your servers and all their logs and incidents.</div>
+            <form onSubmit={del}>
+              <div className="field">
+                <label>{p.has_password ? "Enter your password to confirm" : "Type your username to confirm"}</label>
+                <input className="input" type={p.has_password ? "password" : "text"} value={delPw} onChange={(e) => setDelPw(e.target.value)} required />
+              </div>
+              <button className="btn primary" disabled={busy === "del"}>Delete my account</button>
+            </form>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- App ---------- */
 const PAGES = [
   { key: "dashboard", label: "Dashboard", icon: "▦" },
@@ -1099,6 +1447,7 @@ const PAGES = [
   { key: "logs", label: "Logs", icon: "≡" },
   { key: "incidents", label: "Incidents", icon: "⚠" },
   { key: "users", label: "Users", icon: "◉" },
+  { key: "profile", label: "Profile", icon: "☺" },
 ];
 
 function App() {
@@ -1108,7 +1457,7 @@ function App() {
     const payload = t && decodeToken(t);
     return payload ? payload.role : null;
   });
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(FLASH ? "profile" : "dashboard");
   const isAdmin = role === "admin";
   const pages = PAGES.filter((p) => p.key !== "users" || isAdmin);
 
@@ -1120,6 +1469,12 @@ function App() {
     }
     setRole(user.role);
     setAuthed(true);
+  }
+  function refreshAuth() {
+    const t = getToken();
+    const payload = t && decodeToken(t);
+    setRole(payload ? payload.role : null);
+    setAuthed(!!t);
   }
   function handleLogout() { setToken(null); setAuthed(false); setRole(null); setPage("dashboard"); }
 
@@ -1154,6 +1509,7 @@ function App() {
         {page === "logs" && <Logs />}
         {page === "incidents" && <Incidents />}
         {page === "users" && isAdmin && <Users />}
+        {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} />}
       </main>
     </div>
   );

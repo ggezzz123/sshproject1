@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const db = require("./db");
+require("./geo").backfillCountries();
 
 const app = express();
 // Behind Render's proxy req.ip would otherwise be the proxy's address. Only enable when a
@@ -34,6 +35,7 @@ seedAdmin();
 // API routes
 app.use(require("./routes/agentRoutes"));
 app.use(require("./routes/authRoutes"));
+app.use(require("./routes/profileRoutes"));
 app.use("/api", require("./routes/serverRoutes"));
 app.use("/api", require("./routes/logRoutes"));
 app.use("/api", require("./routes/incidentRoutes"));

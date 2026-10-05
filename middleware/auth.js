@@ -43,7 +43,13 @@ function jwtAuth(req, res, next) {
   }
   const token = auth.replace("Bearer ", "");
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    // Tokens die when the account is deleted or its token_version changes (password change / sign-out everywhere)
+    const row = db.prepare("SELECT token_version FROM users WHERE id = ?").get(payload.id);
+    if (!row || (row.token_version || 0) !== (payload.tv || 0)) {
+      return res.status(401).json({ error: "Session expired, please sign in again" });
+    }
+    req.user = payload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid token" });
@@ -51,7 +57,7 @@ function jwtAuth(req, res, next) {
 }
 
 function signToken(user) {
-  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, {
+  return jwt.sign({ id: user.id, username: user.username, role: user.role, tv: user.token_version || 0 }, JWT_SECRET, {
     expiresIn: "12h",
   });
 }
