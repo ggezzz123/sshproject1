@@ -37,11 +37,11 @@ function publicUser(u) {
 function recordRegistration(userId, method, req) {
   const createdAt = new Date().toISOString();
   const userAgent = String(req.headers["user-agent"] || "").slice(0, 300);
-  db.prepare(
+  const info = db.prepare(
     "INSERT INTO registrations (user_id, method, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?)"
   ).run(userId, method, req.ip || null, userAgent, createdAt);
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
-  mirrorRegistration(user, { method, ip: req.ip, userAgent, createdAt });
+  mirrorRegistration(user, { id: info.lastInsertRowid, method, ip: req.ip, userAgent, createdAt });
 }
 
 /* ---------- Anti-bot ---------- */
