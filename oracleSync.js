@@ -3,7 +3,7 @@
 // web app keeps working and the failure is only logged.
 //
 // Enabled when ORACLE_USER, ORACLE_PASSWORD and ORACLE_CONNECT_STRING are all set,
-// e.g. ORACLE_CONNECT_STRING=100.64.0.5:1521/XEPDB1 (Tailscale IP of the PC : port / service name)
+// e.g. ORACLE_CONNECT_STRING=localhost:1521/XEPDB1 (host:port/service name)
 const oracledb = require("oracledb"); // thin mode: no Oracle Client install needed
 
 const { ORACLE_USER, ORACLE_PASSWORD, ORACLE_CONNECT_STRING } = process.env;
@@ -112,7 +112,7 @@ function mirrorRegistration(user, reg) {
 }
 
 // Connect and create the tables at boot, so problems show up in the log right away.
-// Retries a few times because the Tailscale link may come up after the app starts.
+// Retries a few times because Oracle may still be starting when the app comes up (e.g. after a reboot).
 function connectAtStartup(attempt = 1) {
   getPool()
     .then(() => console.log("[oracle] connected, tables ready"))

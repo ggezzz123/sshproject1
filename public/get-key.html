@@ -93,10 +93,9 @@
     </div>
   </div>
 
-  <script src="/config.js"></script>
   <script src="/js/buttons.js"></script>
   <script>
-    const backendOrigin = API_CONFIG.BACKEND_URL || location.origin;
+    const backendOrigin = location.origin;
 
     const themeBtn = document.getElementById("themeToggle");
     function renderThemeBtn() {
@@ -119,7 +118,7 @@
       const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
       const token = getToken();
       if (token) headers["Authorization"] = "Bearer " + token;
-      const res = await fetch(API_CONFIG.BACKEND_URL + path, { ...opts, headers });
+      const res = await fetch(path, { ...opts, headers });
       if (res.status === 401) {
         setToken(null);
         location.replace("/app?next=/get-key");

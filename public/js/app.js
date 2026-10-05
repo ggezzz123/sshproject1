@@ -47,8 +47,7 @@ async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
   const token = getToken();
   if (token) headers["Authorization"] = "Bearer " + token;
-  const url = path.startsWith('http') ? path : (API_CONFIG.BACKEND_URL + path);
-  const res = await fetch(url, { ...opts, headers });
+  const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) {
     setToken(null);
     throw new Error("กรุณาล็อกอินใหม่");
@@ -271,7 +270,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
             <div style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>หรือ</div>
             {cfg.providers.map((p) => (
               <a key={p} className="btn" style={{ width: "100%", textAlign: "center", boxSizing: "border-box" }}
-                href={API_CONFIG.BACKEND_URL + "/api/auth/oauth/" + p}>
+                href={"/api/auth/oauth/" + p}>
                 {mode === "login" ? "เข้าสู่ระบบ" : "สมัคร"}ด้วย {oauthLabel[p]}
               </a>
             ))}

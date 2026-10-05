@@ -5,12 +5,15 @@
 มี **agent** ตัวเล็ก ๆ รันอยู่บนเซิร์ฟเวอร์ Linux แต่ละเครื่อง คอยอ่าน `/var/log/auth.log` แล้วส่งเหตุการณ์มาที่ **เว็บแอป** นี้ เว็บแอปจะเก็บข้อมูล รัน **detection engine** (brute force, password spraying, บัญชีที่ถูกยึด ฯลฯ) แสดงผลบน dashboard แบบ real-time และส่งแจ้งเตือนไป LINE / Discord / Slack / Telegram / webhook ได้
 
 ```
- เซิร์ฟเวอร์ Linux                       เว็บแอปนี้ (Node.js, Fly.io)                    เครื่องของคุณ (ไม่บังคับ)
-┌───────────────┐   HTTPS + API key   ┌─────────────────────────────────┐   Tailscale   ┌────────────────────┐
-│ agent (Python) │ ─────────────────▶ │ Express API + React dashboard    │ ────────────▶ │ Oracle DB           │
-│ อ่าน auth.log  │                    │ detection engine + การแจ้งเตือน  │  สำเนาข้อมูล   │ (ดูด้วย SQL Developer)│
-└───────────────┘                     │ SQLite (ฐานข้อมูลหลัก)           │  การสมัคร      └────────────────────┘
-                                      └─────────────────────────────────┘
+ เซิร์ฟเวอร์ Linux                    เครื่อง Windows ของคุณ
+┌───────────────┐  HTTPS + API key  ┌─────────────────────────────────┐
+│ agent (Python) │ ───────────────▶ │ Tailscale Funnel (URL สาธารณะ)   │
+│ อ่าน auth.log  │                  │   ↓                              │
+└───────────────┘                   │ เว็บแอป Node.js (Express+React)  │
+                                    │ detection engine + การแจ้งเตือน  │
+                                    │ SQLite (ฐานข้อมูลหลัก)           │
+                                    │ Oracle XE (สำเนาข้อมูลการสมัคร)  │
+                                    └─────────────────────────────────┘
 ```
 
 ## ฟีเจอร์
@@ -42,7 +45,6 @@
 | `public/` | หน้าเว็บ: landing page (`index.html`), dashboard (`app.html` + `js/app.js` ใช้ React ผ่าน CDN ไม่ต้อง build), หน้าขอ key (`get-key.html`) |
 | `agent/` | `agentssh_v2.py` (agent) และ `install.sh` (ตัวติดตั้ง) |
 | `tools/simulate.js` | สร้างทราฟฟิกโจมตีปลอมไว้ทดสอบ |
-| `Dockerfile`, `start.sh`, `fly.toml` | deploy ขึ้น Fly.io (พร้อม Tailscale) |
 
 ## เริ่มใช้งาน (รันบนเครื่อง)
 
@@ -139,7 +141,6 @@ npm start
 | `LOG_TZ_OFFSET`, `ALERT_TZ` | เขตเวลาของ log และกฎ login นอกเวลาทำการ |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | ส่งอีเมลยืนยัน (ไม่ตั้งก็ได้) |
 | `ORACLE_USER`, `ORACLE_PASSWORD`, `ORACLE_CONNECT_STRING` | เปิดการคัดลอกข้อมูลไป Oracle |
-| `TS_AUTHKEY` | auth key ของ Tailscale (ตอน deploy บน Fly.io) |
 
 ## รันบนเครื่อง Windows ของตัวเอง + Tailscale Funnel (ฟรี)
 
@@ -164,37 +165,22 @@ task "SSH Monitor" ตรวจทุก 1 นาทีและเปิดเ�
 
 เว็บใช้ได้เฉพาะตอนเครื่องเปิดอยู่ ถ้าเครื่องปิด agent จะส่ง log ไม่ได้ในช่วงนั้น
 
-## Deploy บน Fly.io
+## ไม่บังคับ: คัดลอกข้อมูลการสมัครไป Oracle
 
-```bash
-fly volumes create data --region ams --size 1     # พื้นที่เก็บ SQLite ถาวร ทำครั้งเดียว
-fly secrets set JWT_SECRET=... ADMIN_PASSWORD=...
-fly deploy
-```
+ข้อมูลการสมัครจะถูกบันทึกลง SQLite ก่อนเสมอ ถ้าตั้งค่าไว้ จะถูกคัดลอกไป Oracle บนเครื่องเดียวกันด้วย เพื่อเปิดดูใน Oracle SQL Developer ถ้า Oracle ปิดอยู่ เว็บยังทำงานปกติ (ข้ามการคัดลอกและบันทึกไว้ใน log จะไม่ส่งย้อนหลังให้)
 
-`fly.toml` mount volume ไว้ที่ `/data` และตั้ง `DB_PATH=/data/ssh-monitor.db` ถ้าไม่มี volume ฐานข้อมูลจะหายทุกครั้งที่ deploy
-
-## ไม่บังคับ: คัดลอกข้อมูลการสมัครไป Oracle บนเครื่องคุณ
-
-ข้อมูลการสมัครจะถูกบันทึกลง SQLite ก่อนเสมอ ถ้าตั้งค่าไว้ จะถูกคัดลอกไป Oracle ที่รันบนเครื่องคุณด้วย เพื่อเปิดดูใน Oracle SQL Developer ถ้าเครื่องคุณปิดอยู่ เว็บยังทำงานปกติ (ข้ามการคัดลอกและบันทึกไว้ใน log และจะไม่ส่งย้อนหลังให้)
-
-1. **บนเครื่องคุณ**: ติดตั้ง Oracle Database XE และ Tailscale ใน SQL Developer เชื่อมด้วย `system` ที่ service `XEPDB1` แล้วรัน:
+1. ติดตั้ง Oracle Database XE ใน SQL Developer เชื่อมด้วย `system` ที่ service `XEPDB1` แล้วรัน:
    ```sql
    CREATE USER ssh_monitor IDENTIFIED BY "<รหัสผ่าน>" QUOTA UNLIMITED ON USERS;
    GRANT CREATE SESSION, CREATE TABLE TO ssh_monitor;
    ```
-2. **Windows Firewall** (PowerShell แบบ Administrator) เปิดพอร์ต 1521 ให้เฉพาะเครือข่าย Tailscale:
-   ```powershell
-   New-NetFirewallRule -DisplayName "Oracle 1521 Tailscale" -Direction Inbound -Protocol TCP -LocalPort 1521 -RemoteAddress 100.64.0.0/10 -Action Allow
+2. ใส่ใน `.env` แล้วรีสตาร์ทเว็บ:
    ```
-3. **Tailscale**: สร้าง auth key แบบ *reusable + ephemeral* แล้วตั้งค่า
-   ```bash
-   fly secrets set TS_AUTHKEY=tskey-auth-...
-   fly secrets set ORACLE_USER=ssh_monitor ORACLE_PASSWORD="<รหัสผ่าน>" \
-                   ORACLE_CONNECT_STRING=<Tailscale IP ของเครื่องคุณ>:1521/XEPDB1
+   ORACLE_USER=ssh_monitor
+   ORACLE_PASSWORD=<รหัสผ่าน>
+   ORACLE_CONNECT_STRING=localhost:1521/XEPDB1
    ```
-   หา IP ของเครื่องคุณด้วย `tailscale ip -4`
-4. ดู `fly logs` ควรเห็น `[tailscale] connected` และ `[oracle] connected, tables ready` จากนั้นตาราง `APP_USERS` และ `APP_REGISTRATIONS` จะปรากฏใน connection `ssh_monitor` password hash จะไม่ถูกคัดลอกไปด้วย
+3. ใน `data\server.log` ควรเห็น `[oracle] connected, tables ready` จากนั้นตาราง `APP_USERS` และ `APP_REGISTRATIONS` จะปรากฏใน connection `ssh_monitor` password hash จะไม่ถูกคัดลอกไปด้วย
 
 ## API
 

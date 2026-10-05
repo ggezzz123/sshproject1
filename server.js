@@ -1,7 +1,6 @@
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
-const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const db = require("./db");
 require("./geo").backfillCountries();
@@ -14,13 +13,12 @@ if (process.env.SSH_MONITOR_SERVICE) {
 }
 
 const app = express();
-// Behind Fly's proxy req.ip would otherwise be the proxy's address. Only enable when a
+// Behind Tailscale Funnel req.ip would otherwise be the proxy's address. Only enable when a
 // proxy really sits in front, or clients could spoof their IP via X-Forwarded-For.
 if (process.env.TRUST_PROXY) {
   const v = process.env.TRUST_PROXY;
   app.set("trust proxy", /^\d+$/.test(v) ? Number(v) : v === "true" ? true : v);
 }
-app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
 // Seed default admin user

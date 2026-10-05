@@ -236,11 +236,10 @@ sudo journalctl -u ssh-monitor -f</span></div>
   </section>
 </div>
 
-<script src="/config.js"></script>
 <script src="/js/buttons.js"></script>
 <script>
   (function () {
-    var origin = API_CONFIG.BACKEND_URL || location.origin;
+    var origin = location.origin;
     document.getElementById("installCmd").textContent =
       "curl -sSL " + origin + "/install.sh | sudo MONITOR_API_KEY=<API_KEY> \\\n  bash -s -- " + origin + "/api/logs";
 
