@@ -6,6 +6,13 @@ const bcrypt = require("bcryptjs");
 const db = require("./db");
 require("./geo").backfillCountries();
 
+// Started by scripts/windows/run-server.ps1: ignore Ctrl+C / Ctrl+Break console events so a stray
+// Ctrl+C on the host PC does not stop the server (use Stop-Process to stop it on purpose).
+if (process.env.SSH_MONITOR_SERVICE) {
+  process.on("SIGINT", () => console.log("[service] ignored Ctrl+C"));
+  process.on("SIGBREAK", () => console.log("[service] ignored Ctrl+Break"));
+}
+
 const app = express();
 // Behind Fly's proxy req.ip would otherwise be the proxy's address. Only enable when a
 // proxy really sits in front, or clients could spoof their IP via X-Forwarded-For.

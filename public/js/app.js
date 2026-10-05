@@ -288,18 +288,19 @@ function Login({ onLogin, resetToken, onResetDone }) {
 }
 
 /* ---------- Analytics helpers ---------- */
+// Incident content (attack names, descriptions, analysis) stays in English on purpose
 const ATTACK_LABEL = {
-  brute_force: "เดารหัสผ่าน (Brute force)",
-  brute_force_success: "ล็อกอินสำเร็จหลังเดารหัสหลายครั้ง",
-  password_spraying: "ลองรหัสเดียวกับหลายบัญชี",
-  credential_stuffing: "ใช้รหัสที่รั่วไหล",
-  compromised_account: "บัญชีที่ถูกเจาะถูกใช้ซ้ำ",
-  username_enumeration: "สุ่มเดาชื่อผู้ใช้",
-  ssh_scanning: "สแกน SSH",
-  abnormal_burst: "เชื่อมต่อถี่ผิดปกติ",
-  new_source_login: "ล็อกอินจากแหล่งใหม่",
-  cross_host: "โจมตีหลายเซิร์ฟเวอร์",
-  post_compromise: "ใช้สิทธิ์สูงหลังถูกเจาะ",
+  brute_force: "Brute force",
+  brute_force_success: "Login after many failures",
+  password_spraying: "Password spraying",
+  credential_stuffing: "Credential stuffing",
+  compromised_account: "Compromised account reuse",
+  username_enumeration: "Username enumeration",
+  ssh_scanning: "SSH scanning",
+  abnormal_burst: "Abnormal burst",
+  new_source_login: "Login from new source",
+  cross_host: "Cross-host campaign",
+  post_compromise: "Post-compromise activity",
 };
 
 // Status colors always travel with an icon + label (never color alone)
