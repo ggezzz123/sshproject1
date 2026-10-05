@@ -2,6 +2,15 @@ const { useState, useEffect, useCallback, useRef } = React;
 
 const TOKEN_KEY = "ssh_monitor_token";
 
+// OAuth callback redirects to /app#token=...; store it and clean the URL.
+(function () {
+  const m = /[#&]token=([^&]+)/.exec(location.hash);
+  if (m) {
+    localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+})();
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -80,30 +89,86 @@ function ThemeToggle({ floating }) {
 }
 
 /* ---------- Login / Register ---------- */
+function Captcha({ cfg, onChange }) {
+  const boxRef = useRef(null);
+  useEffect(() => {
+    if (!cfg.turnstileSiteKey) return;
+    let id;
+    function render() {
+      if (boxRef.current && window.turnstile && id === undefined) {
+        id = window.turnstile.render(boxRef.current, {
+          sitekey: cfg.turnstileSiteKey,
+          callback: (t) => onChange({ captcha_token: t }),
+          "expired-callback": () => onChange({ captcha_token: "" }),
+        });
+      }
+    }
+    if (window.turnstile) render();
+    else {
+      const s = document.createElement("script");
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      s.async = true;
+      s.onload = render;
+      document.head.appendChild(s);
+    }
+    return () => { if (id !== undefined && window.turnstile) window.turnstile.remove(id); };
+  }, [cfg.turnstileSiteKey]);
+
+  if (cfg.turnstileSiteKey) return <div className="field" ref={boxRef} />;
+  if (!cfg.challenge) return null;
+  return (
+    <div className="field">
+      <label>I'm not a robot: {cfg.challenge.question}</label>
+      <input className="input" inputMode="numeric" placeholder="Answer"
+        onChange={(e) => onChange({ captcha_token: cfg.challenge.token, captcha_answer: e.target.value })} />
+    </div>
+  );
+}
+
 function Login({ onLogin }) {
   const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [captcha, setCaptcha] = useState({});
+  const [cfg, setCfg] = useState({ providers: [] });
+  const [error, setError] = useState(() => {
+    const m = /error=([^&]+)/.exec(location.hash);
+    return m ? decodeURIComponent(m[1]) : "";
+  });
   const [loading, setLoading] = useState(false);
+
+  async function loadConfig() {
+    try { setCfg(await api("/api/auth/config")); setCaptcha({}); } catch (e) {}
+  }
+  useEffect(() => { loadConfig(); }, []);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    if (mode === "register" && password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
     try {
-      const data = await api("/api/auth/" + mode, {
-        method: "POST",
-        body: JSON.stringify({ username, password }),
-      });
+      const body = mode === "register"
+        ? { username, email, password, confirm_password: confirm, ...captcha }
+        : { username, password };
+      const data = await api("/api/auth/" + mode, { method: "POST", body: JSON.stringify(body) });
       setToken(data.token);
       onLogin(data.user);
     } catch (err) {
       setError(err.message);
+      if (mode === "register") loadConfig(); // challenges are single-use
     } finally {
       setLoading(false);
     }
   }
+
+  function switchMode(m) { setMode(m); setError(""); loadConfig(); }
+  const oauthLabel = { google: "Google", github: "GitHub" };
 
   return (
     <div className="login-wrap">
@@ -120,18 +185,44 @@ function Login({ onLogin }) {
           <label>Username</label>
           <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         </div>
+        {mode === "register" && (
+          <div className="field">
+            <label>Email (optional)</label>
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+        )}
         <div className="field">
           <label>Password</label>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
+        {mode === "register" && (
+          <>
+            <div className="field">
+              <label>Confirm password</label>
+              <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </div>
+            <Captcha key={cfg.challenge ? cfg.challenge.token : "ts"} cfg={cfg} onChange={setCaptcha} />
+          </>
+        )}
         <button className="btn primary" style={{ width: "100%" }} disabled={loading}>
           {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
         </button>
+        {cfg.providers.length > 0 && (
+          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>or</div>
+            {cfg.providers.map((p) => (
+              <a key={p} className="btn" style={{ width: "100%", textAlign: "center", boxSizing: "border-box" }}
+                href={API_CONFIG.BACKEND_URL + "/api/auth/oauth/" + p}>
+                {mode === "login" ? "Sign in" : "Sign up"} with {oauthLabel[p]}
+              </a>
+            ))}
+          </div>
+        )}
         <div style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
           {mode === "login" ? (
-            <>No account? <a href="#" onClick={(e) => { e.preventDefault(); setMode("register"); setError(""); }}>Register</a></>
+            <>No account? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("register"); }}>Register</a></>
           ) : (
-            <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); setError(""); }}>Sign in</a></>
+            <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("login"); }}>Sign in</a></>
           )}
         </div>
       </form>

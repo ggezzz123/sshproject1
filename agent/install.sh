@@ -1,8 +1,10 @@
 #!/bin/bash
 # SSH Log Monitor Agent - cross-distro installer
 # Usage:
-#   curl -sSL https://<monitor-host>/install.sh | sudo bash -s -- <API_URL> <API_KEY>
-#   e.g. curl -sSL https://monitor.example.com/install.sh | sudo bash -s -- https://monitor.example.com/api/logs my-secret-key
+#   curl -sSL https://<monitor-host>/install.sh | sudo bash -s -- <API_URL>
+#   (you are then asked for the API key; it is typed hidden so it stays out of shell history and `ps`)
+# Non-interactive (keeps the key out of the command line):
+#   curl -sSL https://<monitor-host>/install.sh | sudo MONITOR_API_KEY=<API_KEY> bash -s -- <API_URL>
 set -e
 
 INSTALL_DIR="/opt/ssh-monitor"
@@ -11,7 +13,12 @@ ENV_FILE="$INSTALL_DIR/.env"
 SERVICE_NAME="ssh-monitor"
 
 API_URL="${1:-}"
-API_KEY="${2:-}"
+# Prefer the env var; a 2nd argument still works but is visible in history / `ps`.
+API_KEY="${MONITOR_API_KEY:-${2:-}}"
+if [ -n "${2:-}" ]; then
+    echo "WARNING: passing the API key as an argument exposes it in shell history and 'ps'."
+    echo "         Prefer: sudo MONITOR_API_KEY=... bash -s -- <API_URL>  (or omit it to be prompted)"
+fi
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root (use sudo)."
@@ -39,7 +46,8 @@ if [ -z "$API_KEY" ]; then
     echo "    (register your server, then copy the key back here)"
     echo ""
     # stdin is the piped script under `curl | bash`, so prompt on the terminal
-    read -r -p "    Enter API key: " API_KEY < /dev/tty
+    read -r -s -p "    Enter API key (hidden): " API_KEY < /dev/tty
+    echo ""
     if [ -z "$API_KEY" ]; then
         echo "API key is required."
         exit 1
@@ -105,10 +113,10 @@ fi
 # --- Create venv + install deps ---
 echo "==> Creating virtual environment..."
 python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install --quiet --disable-pip-version-check watchdog==3.0.0 requests==2.31.0
+"$INSTALL_DIR/venv/bin/pip" install --quiet --disable-pip-version-check watchdog==3.0.0 requests==2.32.4
 
 # --- Write .env ---
-cat > "$ENV_FILE" << EOF
+(umask 077; cat > "$ENV_FILE" << EOF
 MONITOR_API_URL=$API_URL
 MONITOR_API_KEY=$API_KEY
 LOG_PATH=/var/log
@@ -119,6 +127,8 @@ BATCH_SIZE=10
 SEND_INTERVAL=30
 SSL_VERIFY=true
 EOF
+)
+chmod 600 "$ENV_FILE"
 echo "==> Configuration saved to $ENV_FILE"
 
 # --- Install service ---

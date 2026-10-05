@@ -64,6 +64,23 @@ function addColumns(table, defs) {
     if (!existing.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
 }
+addColumns("users", {
+  email: "VARCHAR(255)",
+  provider: "VARCHAR(20) DEFAULT 'local'",
+  provider_id: "VARCHAR(100)",
+  created_at: "DATETIME",
+});
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id) WHERE provider_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS registrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    method VARCHAR(20) NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at DATETIME NOT NULL
+);
+`);
 addColumns("servers", { user_id: "INTEGER REFERENCES users(id)" });
 addColumns("incidents", {
   attack_type: "VARCHAR(50) DEFAULT 'brute_force'",
