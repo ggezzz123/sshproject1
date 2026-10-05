@@ -1352,6 +1352,91 @@ function AttackGlobe({ rows, selected, onSelect }) {
   );
 }
 
+/* ---------- LINE alerts (Profile) ---------- */
+function LineCard({ isAdmin }) {
+  const [st, setSt] = useState(null);
+  const [code, setCode] = useState(null); // { code, until }
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  const [busy, setBusy] = useState("");
+  const [left, setLeft] = useState(0);
+
+  const load = useCallback(() => api("/api/profile/line").then(setSt).catch((e) => setMsg({ ok: "", err: e.message })), []);
+  useEffect(() => { load(); }, [load]);
+
+  // While a code is shown: count down and check every 3s whether the bot received it
+  useEffect(() => {
+    if (!code) return;
+    const tick = setInterval(() => {
+      const s = Math.max(0, Math.round((code.until - Date.now()) / 1000));
+      setLeft(s);
+      if (!s) setCode(null);
+    }, 1000);
+    const poll = setInterval(() => {
+      api("/api/profile/line").then((d) => {
+        setSt(d);
+        if (d.linked) { setCode(null); setMsg({ ok: "เชื่อม LINE สำเร็จ ต่อไปการแจ้งเตือนของเซิร์ฟเวอร์คุณจะส่งเข้า LINE", err: "" }); }
+      }).catch(() => {});
+    }, 3000);
+    return () => { clearInterval(tick); clearInterval(poll); };
+  }, [code]);
+
+  async function run(name, fn) {
+    setBusy(name); setMsg({ ok: "", err: "" });
+    try { await fn(); } catch (e) { setMsg({ ok: "", err: e.message }); } finally { setBusy(""); }
+  }
+  const startLink = () => run("link", async () => {
+    const d = await api("/api/profile/line/link", { method: "POST" });
+    setSt(d); setCode({ code: d.code, until: Date.now() + d.expires_in * 1000 }); setLeft(d.expires_in);
+  });
+  const test = () => run("test", async () => {
+    await api("/api/profile/line/test", { method: "POST" });
+    setMsg({ ok: "ส่งข้อความทดสอบแล้ว ลองเปิด LINE ดู", err: "" });
+  });
+  const unlink = () => {
+    if (!confirm("ยกเลิกการเชื่อม LINE? จะไม่ได้รับแจ้งเตือนทาง LINE อีก")) return;
+    run("unlink", async () => { await api("/api/profile/line", { method: "DELETE" }); await load(); setMsg({ ok: "ยกเลิกการเชื่อม LINE แล้ว", err: "" }); });
+  };
+
+  const bot = st && st.bot;
+  return (
+    <section className="card">
+      <h4 style={{ marginBottom: 8 }}><span className="line-dot" aria-hidden="true">LINE</span> แจ้งเตือนทาง LINE</h4>
+      <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>
+        รับแจ้งเตือนเข้า LINE ทันทีเมื่อเซิร์ฟเวอร์ของคุณถูกโจมตี (ระดับความเสี่ยงสูงขึ้นไป)
+      </div>
+      {msg.ok && <div className="ok-banner">{msg.ok}</div>}
+      {msg.err && <div className="error-banner">{msg.err}</div>}
+      {!st ? <div className="empty">กำลังโหลด...</div> : !st.configured ? (
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          ผู้ดูแลระบบยังไม่ได้ตั้งค่าบอท LINE
+          {isAdmin && <> — ใส่ <span className="mono">LINE_CHANNEL_ACCESS_TOKEN</span> และ <span className="mono">LINE_CHANNEL_SECRET</span> ใน <span className="mono">.env</span> แล้วรีสตาร์ทเว็บ (ดูขั้นตอนใน README)</>}
+        </div>
+      ) : st.linked ? (
+        <div>
+          <div style={{ marginBottom: 14, fontSize: 14 }}><Chip kind="success">เชื่อมแล้ว</Chip> {bot && <span style={{ color: "var(--text-muted)" }}>กับบอท {bot.name}</span>}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn secondary sm" disabled={!!busy} onClick={test}>{busy === "test" ? "กำลังส่ง..." : "ส่งข้อความทดสอบ"}</button>
+            <button className="btn ghost sm danger" disabled={!!busy} onClick={unlink}>ยกเลิกการเชื่อม</button>
+          </div>
+        </div>
+      ) : code ? (
+        <ol className="line-steps">
+          <li>เพิ่มเพื่อนบอท {bot ? <b>{bot.name}</b> : "SSH Monitor"}
+            {bot && bot.addUrl && <> — <a href={bot.addUrl} target="_blank" rel="noopener noreferrer">กดเพิ่มเพื่อน</a></>}
+            {bot && bot.lineId && <div className="hint">หรือค้นหา LINE ID <span className="mono">{bot.lineId}</span></div>}
+          </li>
+          <li>ส่งรหัสนี้ในแชทกับบอท
+            <div className="line-code mono">{code.code}</div>
+            <div className="hint">รหัสหมดอายุใน {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")} นาที · หน้านี้จะอัปเดตเองเมื่อเชื่อมสำเร็จ</div>
+          </li>
+        </ol>
+      ) : (
+        <button className="btn primary" disabled={!!busy} onClick={startLink}>{busy === "link" ? "กำลังสร้างรหัส..." : "เชื่อม LINE"}</button>
+      )}
+    </section>
+  );
+}
+
 /* ---------- Profile ---------- */
 function Avatar({ name, src, large }) {
   const cls = "avatar" + (large ? " lg" : "");
@@ -1558,6 +1643,8 @@ function Profile({ onToken, onDeleted, flash, onProfile }) {
             <button className="btn primary" disabled={busy === "email"}>{busy === "email" ? "กำลังบันทึก..." : "บันทึกอีเมล"}</button>
           </form>
         </section>
+
+        <LineCard isAdmin={p.role === "admin"} />
 
         <section className="card">
           <h4 style={{ marginBottom: 14 }}>รหัสผ่าน</h4>

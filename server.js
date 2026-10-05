@@ -19,7 +19,8 @@ if (process.env.TRUST_PROXY) {
   const v = process.env.TRUST_PROXY;
   app.set("trust proxy", /^\d+$/.test(v) ? Number(v) : v === "true" ? true : v);
 }
-app.use(express.json({ limit: "5mb" }));
+// rawBody is kept for verifying signed webhooks (LINE)
+app.use(express.json({ limit: "5mb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 // Seed default admin user
 function seedAdmin() {
@@ -42,6 +43,7 @@ app.use(require("./routes/agentRoutes"));
 app.use(require("./routes/authRoutes"));
 app.use(require("./routes/profileRoutes"));
 app.use(require("./routes/simulateRoutes"));
+app.use(require("./routes/lineRoutes"));
 app.use("/api", require("./routes/serverRoutes"));
 app.use("/api", require("./routes/logRoutes"));
 app.use("/api", require("./routes/incidentRoutes"));

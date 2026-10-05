@@ -73,6 +73,7 @@ addColumns("users", {
   last_login_at: "DATETIME",
   token_version: "INTEGER DEFAULT 0",
   avatar: "TEXT",
+  line_user_id: "VARCHAR(64)",
 });
 addColumns("ssh_logs", { country: "VARCHAR(2)" });
 db.exec(`

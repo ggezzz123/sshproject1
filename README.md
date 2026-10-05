@@ -40,6 +40,7 @@
 | `geo.js` | แปลง IP เป็นประเทศ (ฐานข้อมูล offline `geoip-country`) |
 | `mailer.js`, `routes/profileRoutes.js` | ส่งอีเมล และ API ของหน้าโปรไฟล์ |
 | `simulation.js`, `routes/simulateRoutes.js` | สถานการณ์จำลองการโจมตี และ API ของหน้าทดสอบการโจมตี |
+| `line.js`, `routes/lineRoutes.js` | ส่งข้อความ LINE และการเชื่อม LINE ของผู้ใช้ (webhook) |
 | `oracleSync.js` | คัดลอกข้อมูลการสมัครไป Oracle (ไม่บังคับ) |
 | `middleware/auth.js` | ยืนยันตัวตนด้วย JWT (dashboard) และ API key (agent) |
 | `public/` | หน้าเว็บ: landing page (`index.html`), dashboard (`app.html` + `js/app.js` ใช้ React ผ่าน CDN ไม่ต้อง build), หน้าขอ key (`get-key.html`) |
@@ -89,6 +90,30 @@ npm start
 - ทุกการสมัครถูกเก็บในตาราง `users` และบันทึกใน `registrations` (วิธีสมัคร, IP, user agent, เวลา)
 - Role: `user` เห็นเฉพาะเซิร์ฟเวอร์ log และ incident ของตัวเอง ส่วน `admin` เห็นทั้งหมด (บัญชีที่มาจาก `ADMIN_USERNAME` / `ADMIN_PASSWORD`)
 
+## แจ้งเตือนทาง LINE
+
+LINE Notify ปิดบริการไปแล้ว (31 มี.ค. 2025) ระบบจึงใช้ **LINE Messaging API** ผ่านบอท LINE Official Account ตัวเดียวทั้งระบบ แล้วให้ผู้ใช้แต่ละคนเชื่อม LINE ของตัวเองในหน้าโปรไฟล์ แจ้งเตือนของเซิร์ฟเวอร์ใคร จะส่งเข้า LINE ของคนนั้น
+
+**ตั้งค่าครั้งเดียว (ผู้ดูแลระบบ)**
+1. เข้า https://developers.line.biz/console/ สร้าง Provider แล้วสร้างช่องทางแบบ **Messaging API** (จะได้ LINE Official Account มาด้วย)
+2. แท็บ **Basic settings**: คัดลอก **Channel secret**
+3. แท็บ **Messaging API**:
+   - กด Issue **Channel access token (long-lived)** แล้วคัดลอก
+   - **Webhook URL** ใส่ `<PUBLIC_URL>/api/line/webhook` แล้วกด Verify และเปิด **Use webhook**
+   - ปิด **Auto-reply messages** (กดลิงก์ไปตั้งใน LINE Official Account Manager) ไม่งั้นบอทจะตอบข้อความอัตโนมัติซ้อน
+4. ใส่ใน `.env` แล้วรีสตาร์ทเว็บ:
+   ```
+   LINE_CHANNEL_ACCESS_TOKEN=<access token>
+   LINE_CHANNEL_SECRET=<channel secret>
+   ```
+
+**ผู้ใช้เชื่อม LINE ของตัวเอง:** หน้าโปรไฟล์ → การ์ด "แจ้งเตือนทาง LINE" → กด **เชื่อม LINE** → เพิ่มเพื่อนบอท → ส่งรหัส 6 หลักที่แสดง (หมดอายุใน 10 นาที) หน้าเว็บจะขึ้น "เชื่อมแล้ว" เอง กด **ส่งข้อความทดสอบ** เพื่อเช็กได้
+
+- แจ้งเตือนเฉพาะเหตุการณ์ที่ความเสี่ยงตั้งแต่ `ALERT_MIN_RISK` ขึ้นไป (ค่าเริ่มต้น HIGH) เหตุการณ์เดิมจะไม่แจ้งซ้ำภายใน 30 นาที
+- webhook ตรวจลายเซ็นจาก LINE ทุกครั้ง ข้อความที่ไม่ได้มาจาก LINE จริงจะถูกปฏิเสธ
+- ถ้าต้องการให้ LINE ใดได้รับแจ้งเตือนทุกเซิร์ฟเวอร์ (เช่น admin) ใส่ `LINE_TO=<user/group ID>` เพิ่ม
+- แพ็กเกจฟรีของ LINE OA ส่งข้อความได้จำนวนจำกัดต่อเดือน ดูโควตาได้ใน LINE Official Account Manager
+
 ## ทดสอบการโจมตี
 
 เมนู **ทดสอบการโจมตี** จำลองการโจมตี SSH 11 แบบ (เดารหัสผ่าน, เดาชื่อผู้ใช้, password spraying, credential stuffing, สแกนพอร์ต, โจมตีหลายเครื่อง ฯลฯ) เพื่อดูว่าระบบตรวจจับได้ถูกต้อง แต่ละแบบบอกผลที่ควรได้ไว้ และกดจำลองทีละแบบหรือทั้งหมดได้
@@ -137,7 +162,8 @@ npm start
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | ใช้ Cloudflare Turnstile แทนโจทย์ในตัว |
 | `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` | เปิดการสมัครด้วย Google / GitHub |
 | `ALERT_MIN_RISK` | ความเสี่ยงต่ำสุดที่จะส่งแจ้งเตือน (`LOW`..`CRITICAL` ค่าเริ่มต้น `HIGH`) |
-| `LINE_*`, `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`, `TELEGRAM_*`, `WEBHOOK_URL` | ช่องทางแจ้งเตือน (ตั้งช่องไหนก็ใช้ช่องนั้น) |
+| `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET`, `LINE_TO` | แจ้งเตือนทาง LINE (ดูหัวข้อด้านบน) |
+| `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`, `TELEGRAM_*`, `WEBHOOK_URL` | ช่องทางแจ้งเตือน (ตั้งช่องไหนก็ใช้ช่องนั้น) |
 | `LOG_TZ_OFFSET`, `ALERT_TZ` | เขตเวลาของ log และกฎ login นอกเวลาทำการ |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | ส่งอีเมลยืนยัน (ไม่ตั้งก็ได้) |
 | `ORACLE_USER`, `ORACLE_PASSWORD`, `ORACLE_CONNECT_STRING` | เปิดการคัดลอกข้อมูลไป Oracle |

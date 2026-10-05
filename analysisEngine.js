@@ -79,8 +79,9 @@ function countBy(list, key) {
 
 // One alert per attack type + attacker + risk across servers (cross-host fires on every host)
 const recentAlerts = new Map();
-function alertIsDuplicate(type, key, risk) {
-  const id = `${type}|${key}|${risk}`;
+// Per server owner, so the same attacker hitting two users' servers alerts both of them
+function alertIsDuplicate(ownerId, type, key, risk) {
+  const id = `${ownerId}|${type}|${key}|${risk}`;
   const now = Date.now();
   for (const [k, t] of recentAlerts) if (now - t > T.alertCooldown) recentAlerts.delete(k);
   if (recentAlerts.has(id)) return true;
@@ -133,11 +134,11 @@ function upsertIncident(f) {
   }
 
   const row = db.prepare("SELECT * FROM incidents WHERE id = ?").get(id);
-  const server = db.prepare("SELECT hostname, name, is_test FROM servers WHERE id = ?").get(f.serverId) || {};
+  const server = db.prepare("SELECT hostname, name, is_test, user_id FROM servers WHERE id = ?").get(f.serverId) || {};
   if (server.is_test && !testAlerts) return row;
   if (notifier.shouldAlert(risk, row.alerted_risk)) {
     db.prepare("UPDATE incidents SET alerted_risk = ? WHERE id = ?").run(risk, id);
-    if (alertIsDuplicate(f.type, f.key, risk)) return row;
+    if (alertIsDuplicate(server.user_id, f.type, f.key, risk)) return row;
     const verdict = row.source_ip ? analyzeIp(row.source_ip, null).verdict.text : null;
     const title = (server.is_test ? "[TEST] " : "") + (ATTACK_TYPES[f.type] || f.type);
     notifier
