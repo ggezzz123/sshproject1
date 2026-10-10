@@ -136,8 +136,13 @@ class SSHLogMonitor(PatternMatchingEventHandler):
         filepath = event.src_path
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                default_pos = os.path.getsize(filepath) if filepath not in self.file_positions else 0
-                last_pos = self.file_positions.get(filepath, default_pos)
+                size = os.path.getsize(filepath)
+                if filepath not in self.file_positions:
+                    last_pos = size            # first time we see the file: skip existing content
+                elif size < self.file_positions[filepath]:
+                    last_pos = 0               # file rotated/truncated by logrotate: re-read from the start
+                else:
+                    last_pos = self.file_positions[filepath]
                 f.seek(last_pos)
                 new_lines = f.readlines()
                 self.file_positions[filepath] = f.tell()
@@ -184,10 +189,12 @@ class SSHLogMonitor(PatternMatchingEventHandler):
             match = re.search(r"^(\S+)\s+.*?session closed for user (\S+)", line)
             if match:
                 log_data = {"timestamp": ts, "event_type": "session_closed", "username": match.group(2), "severity": "info"}
-        elif "sshd" in line and "Connection closed by" in line and "preauth" in line:
-            match = re.search(r"^(\S+)\s+.*?Connection closed by.*?(\d+\.\d+\.\d+\.\d+) port (\d+)", line)
+        elif "sshd" in line and ("Connection closed by" in line or "Connection reset by" in line) and "preauth" in line:
+            # Real sshd uses several shapes and IPv6 is common: "Connection closed by 1.2.3.4 port 22 [preauth]",
+            # "Connection reset by 2001:db8::1 port 22 [preauth]", "... by authenticating user root 1.2.3.4 port 22 [preauth]".
+            match = re.search(r"Connection (?:closed|reset) by\s+(?:(?:invalid|authenticating) user \S+\s+)?([0-9A-Fa-f.:]+)\s+port\s+(\d+)", line)
             if match:
-                log_data = {"timestamp": ts, "event_type": "connection_closed_preauth", "ip_address": match.group(2), "port": match.group(3), "severity": "low"}
+                log_data = {"timestamp": ts, "event_type": "connection_closed_preauth", "ip_address": match.group(1), "port": match.group(2), "severity": "low"}
         return log_data
 
     ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)")
