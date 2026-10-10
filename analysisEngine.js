@@ -158,6 +158,13 @@ function analyzeIpOnServer(serverId, ip, refMs) {
   // The most specific classification of this IP's failures; plain brute force is the fallback
   let specific = null;
 
+  // Real sshd logs a non-existent account twice: "Invalid user x" (ssh_invalid_user) AND
+  // "Failed password for invalid user x" (ssh_login_failed). So a failed login for a username this IP
+  // also probed as invalid is NOT evidence of a real account — only genuine accounts count as "valid"
+  // for spraying / credential stuffing, otherwise plain username enumeration looks like both.
+  const probedInvalidUsers = new Set(ev.filter((e) => e.type === "ssh_invalid_user" && e.user).map((e) => e.user));
+  const hitsRealAccount = (e) => e.type === "ssh_login_failed" && !probedInvalidUsers.has(e.user);
+
   // Successful login after many failures
   const successes = ev.filter((e) => e.type === "ssh_login_success");
   const lastSuccess = successes[successes.length - 1];
@@ -177,7 +184,7 @@ function analyzeIpOnServer(serverId, ip, refMs) {
   // spraying/enumeration. Lists made almost entirely of non-existent users are enumeration instead.
   const f15 = fails(within(T.stuffWindow));
   const users15 = countBy(f15, "user");
-  const validShare = f15.length ? f15.filter((e) => e.type === "ssh_login_failed").length / f15.length : 0;
+  const validShare = f15.length ? f15.filter(hitsRealAccount).length / f15.length : 0;
   const stuffing = users15.size >= T.stuffMinUsers && f15.length / users15.size <= T.stuffMaxRatio && validShare >= T.stuffMinValidShare;
   if (stuffing) {
     specific = specific || "credential_stuffing";
@@ -194,7 +201,7 @@ function analyzeIpOnServer(serverId, ip, refMs) {
   // Password spraying (few tries per existing account, across many accounts)
   const f60 = fails(within(T.sprayWindow));
   const users60 = countBy(f60, "user");
-  const validUsers = new Set(f60.filter((e) => e.type === "ssh_login_failed").map((e) => e.user));
+  const validUsers = new Set(f60.filter(hitsRealAccount).map((e) => e.user));
   const maxPerUser = Math.max(0, ...users60.values());
   if (!stuffing && users60.size >= T.sprayMinUsers && maxPerUser <= T.sprayMaxPerUser && validUsers.size >= T.sprayMinValidUsers) {
     const hit = ev.find((e) => e.type === "ssh_login_success" && users60.has(e.user));
