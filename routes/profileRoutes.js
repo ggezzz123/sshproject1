@@ -5,6 +5,7 @@ const db = require("../db");
 const { jwtAuth, signToken } = require("../middleware/auth");
 const { sendMail, enabled: mailEnabled } = require("../mailer");
 const { recentLogins } = require("../loginLog");
+const { deleteUserAndData } = require("../accounts");
 const { verifyHuman, CAPTCHA_FAILED } = require("../captcha");
 
 const router = express.Router();
@@ -231,20 +232,7 @@ router.delete("/api/profile", (req, res) => {
   const { password, confirm_username } = req.body || {};
   const ok = isLocal(u) ? bcrypt.compareSync(String(password || ""), u.password_hash) : confirm_username === u.username;
   if (!ok) return res.status(403).json({ error: isLocal(u) ? "รหัสผ่านไม่ถูกต้อง" : "กรุณาพิมพ์ชื่อผู้ใช้ให้ถูกต้องเพื่อยืนยัน" });
-  db.exec("BEGIN");
-  try {
-    const own = "(SELECT id FROM servers WHERE user_id = ?)";
-    db.prepare(`DELETE FROM ssh_logs WHERE server_id IN ${own}`).run(u.id);
-    db.prepare(`DELETE FROM incidents WHERE server_id IN ${own}`).run(u.id);
-    db.prepare("DELETE FROM servers WHERE user_id = ?").run(u.id);
-    db.prepare("DELETE FROM registrations WHERE user_id = ?").run(u.id);
-    db.prepare("DELETE FROM logins WHERE user_id = ?").run(u.id);
-    db.prepare("DELETE FROM users WHERE id = ?").run(u.id);
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
-  }
+  deleteUserAndData(u.id);
   res.json({ ok: true });
 });
 

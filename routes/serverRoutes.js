@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../db");
 const { jwtAuth, requireAdmin, generateApiKey } = require("../middleware/auth");
+const { deleteUserAndData } = require("../accounts");
 
 const router = express.Router();
 router.use(jwtAuth);
@@ -34,6 +35,16 @@ router.get("/users", requireAdmin, (req, res) => {
     )
     .all();
   res.json(users);
+});
+
+// Admin: delete another non-admin account together with its servers, logs and incidents
+router.delete("/users/:id", requireAdmin, (req, res) => {
+  const user = db.prepare("SELECT id, role FROM users WHERE id = ?").get(req.params.id);
+  if (!user) return res.status(404).json({ error: "ไม่พบผู้ใช้" });
+  if (user.id === req.user.id) return res.status(400).json({ error: "ลบบัญชีของตัวเองจากหน้านี้ไม่ได้" });
+  if (user.role === "admin") return res.status(403).json({ error: "ลบบัญชีผู้ดูแลระบบไม่ได้" });
+  deleteUserAndData(user.id);
+  res.json({ status: "deleted" });
 });
 
 // Self-service: only the caller's own servers/keys (used by /get-key)

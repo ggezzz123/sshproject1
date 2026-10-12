@@ -96,6 +96,7 @@ const ICONS = {
   search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>,
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>,
   filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />,
+  trash: <><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></>,
   refresh: <><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5M3 21v-5h5" /></>,
 };
 function Icon({ name, size = 18 }) {
@@ -1132,7 +1133,7 @@ function Servers({ go }) {
             </div>
           ))}
           <div className="table-wrap">
-            <table>
+            <table className="sticky-actions">
               <thead>
                 <tr><th>ชื่อ</th>{isAdmin && <th>เจ้าของ</th>}<th>Hostname</th><th>IP</th><th>สถานะ</th><th>API Key</th><th>Log</th><th>เหตุการณ์</th><th>จัดการ</th></tr>
               </thead>
@@ -1151,7 +1152,7 @@ function Servers({ go }) {
                       <button className="btn ghost sm" onClick={() => setShowCmd(showCmd === s.id ? null : s.id)}>คำสั่งติดตั้ง</button>
                       <button className="btn ghost sm" onClick={() => copyKey(s.api_key, s.id)}>{copied === s.id ? "คัดลอกแล้ว!" : "คัดลอก key"}</button>
                       <button className="btn ghost sm" onClick={() => regenerate(s)}>สร้าง key ใหม่</button>
-                      <button className="btn ghost sm danger" onClick={() => remove(s)}>ลบ</button>
+                      <button className="btn ghost sm danger" onClick={() => remove(s)}><Icon name="trash" size={14} /> ลบ</button>
                     </td>
                   </tr>
                 ))}
@@ -1317,24 +1318,47 @@ function Incidents({ go }) {
 /* ---------- Users ---------- */
 function Users() {
   const [users, setUsers] = useState([]);
-  useEffect(() => {
-    api("/api/users").then(setUsers).catch(() => {});
-  }, []);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const myId = (decodeToken(getToken() || "") || {}).id;
+  const load = useCallback(() => { api("/api/users").then(setUsers).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function remove(u) {
+    const typed = prompt(`ลบผู้ใช้ "${u.username}" ถาวร?\n\nเซิร์ฟเวอร์ ${u.server_count} เครื่องของผู้ใช้นี้ รวมถึง log และเหตุการณ์ทั้งหมดจะถูกลบด้วย กู้คืนไม่ได้\n\nพิมพ์ชื่อผู้ใช้เพื่อยืนยัน:`);
+    if (typed === null) return;
+    if (typed.trim() !== u.username) { setNotice(""); setError("ชื่อผู้ใช้ไม่ตรง ยังไม่ได้ลบ"); return; }
+    setError(""); setNotice("");
+    try {
+      await api("/api/users/" + u.id, { method: "DELETE" });
+      setNotice(`ลบผู้ใช้ "${u.username}" แล้ว`);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
   return (
     <div>
       <div className="page-title">
         <h1>ผู้ใช้</h1>
         <div className="sub">บัญชีทั้งหมด</div>
       </div>
+      {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="ok-banner">{notice}</div>}
       <div className="card table-wrap">
         <table>
-          <thead><tr><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>เซิร์ฟเวอร์</th></tr></thead>
+          <thead><tr><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>เซิร์ฟเวอร์</th><th>จัดการ</th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.username}</td>
                 <td><Chip kind={u.role === "admin" ? "info" : "muted"}>{u.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"}</Chip></td>
                 <td className="mono">{u.server_count}</td>
+                <td>
+                  {u.id === myId ? <span className="field-hint">บัญชีของคุณ</span>
+                    : u.role === "admin" ? <span className="field-hint">-</span>
+                    : <button className="btn ghost sm danger" onClick={() => remove(u)}><Icon name="trash" size={14} /> ลบผู้ใช้</button>}
+                </td>
               </tr>
             ))}
           </tbody>
