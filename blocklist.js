@@ -134,6 +134,12 @@ function saveSettings(userId, { enabled, min_risk, minutes }) {
 
 /* ---------------- Automatic blocking ---------------- */
 
+// Incident types that only alert: a successful login from a new address is usually the real user,
+// and sudo activity has no remote address to block.
+const ALERT_ONLY = new Set(["new_source_login", "post_compromise"]);
+// Cross-host is rated HIGH from the 2nd server touched; one mistyped password on two servers must not lock you out
+const CROSS_HOST_MIN_ATTEMPTS = 5;
+
 function durationText(minutes) {
   if (!minutes) return "ถาวร (จนกว่าจะปลดบล็อก)";
   if (minutes % 1440 === 0) return `${minutes / 1440} วัน`;
@@ -146,7 +152,11 @@ function durationText(minutes) {
 function autoBlock({ server, incident, risk, title }) {
   const ip = incident.source_ip;
   if (!ip || !normalize(ip) || neverBlock(ip)) return null;
-  const owner = server.user_id == null ? null : server.user_id;
+  if (ALERT_ONLY.has(incident.attack_type)) return null;
+  if (incident.attack_type === "cross_host" && (incident.failed_attempts || 0) < CROSS_HOST_MIN_ATTEMPTS) return null;
+  // A server without an owner (static VALID_API_KEYS agent) must not create a global rule for everyone
+  if (server.user_id == null) return null;
+  const owner = server.user_id;
   const cfg = settingsFor(owner);
   if (!cfg.enabled || (RISK_ORDER[risk] ?? -1) < (RISK_ORDER[cfg.min_risk] ?? 2)) return null;
   if (matching(owner, ip, "allow") || matching(owner, ip, "block")) return null;

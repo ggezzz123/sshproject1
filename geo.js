@@ -1,5 +1,6 @@
 // IP -> country (ISO 3166-1 alpha-2) using the offline geoip-country database.
 // "??" means the IP has no public country (private range, reserved, unknown).
+const net = require("net");
 const geoip = require("geoip-country");
 const db = require("./db");
 
@@ -7,8 +8,11 @@ const UNKNOWN = "??";
 
 function countryOf(ip) {
   if (!ip) return null;
+  // Only real addresses reach the lookup library (its parser has a long-input DoS, GHSA-h3mg-xc3c-68pw)
+  const addr = String(ip).replace(/^::ffff:/i, "");
+  if (!net.isIP(addr)) return UNKNOWN;
   try {
-    const r = geoip.lookup(String(ip).replace(/^::ffff:/i, ""));
+    const r = geoip.lookup(addr);
     return (r && r.country) || UNKNOWN;
   } catch (e) {
     return UNKNOWN;

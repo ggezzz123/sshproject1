@@ -166,40 +166,62 @@ class SSHLogMonitor(PatternMatchingEventHandler):
         if len(self.batch_logs) >= BATCH_SIZE or (time.time() - self.last_send_time) > SEND_INTERVAL:
             self.send_logs_to_server()
 
+    # The SSH username is chosen by whoever connects, and sshd logs it verbatim (spaces included), so a
+    # username like "x from 198.51.100.7 port 1" must not make us report 198.51.100.7 as the attacker
+    # (that would let anyone get any IP auto-blocked). So: find the program tag first (it comes before
+    # any attacker-controlled text), then match the whole message anchored at both ends, taking the
+    # address that sshd itself appends last.
+    PROG_TAG = re.compile(r"\b(sshd(?:-session)?|sudo)(?:\[\d+\])?:\s+")
+    SSHD_PATTERNS = [
+        ("ssh_login_success", "info", re.compile(r"^Accepted (password|publickey) for (\S+) from (\S+) port (\d+)(?:\s+ssh2.*)?$")),
+        ("ssh_login_failed", "warning", re.compile(r"^Failed (password) for (?:invalid user )?(.*) from (\S+) port (\d+)(?:\s+ssh2)?$")),
+        ("ssh_invalid_user", "high", re.compile(r"^Invalid user (.*) from (\S+) port (\d+)$")),
+        # "Connection closed by 1.2.3.4 port 22 [preauth]", "Connection reset by 2001:db8::1 port 22 [preauth]",
+        # "... by authenticating user root 1.2.3.4 port 22 [preauth]", "... by invalid user x 1.2.3.4 port 22 [preauth]"
+        ("connection_closed_preauth", "low", re.compile(r"^Connection (?:closed|reset) by (?:(?:invalid|authenticating) user (.*) )?(\S+) port (\d+) \[preauth\]$")),
+    ]
+
+    @staticmethod
+    def valid_ip(value):
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False
+
     def parse_log_line(self, line):
-        log_data = None
+        tag = self.PROG_TAG.search(line)
+        if not tag:
+            return None
+        prog, msg = tag.group(1), line[tag.end():].strip()
         ts = self.line_timestamp(line)
-        if "sudo" in line and "COMMAND=" in line:
-            match = re.search(r"sudo(?:\[\d+\])?:\s+(\S+)\s*:.*?COMMAND=(.*)$", line)
+        if prog == "sudo":
+            match = re.match(r"^(\S+)\s*:.*?COMMAND=(.*)$", msg)
             if match:
-                log_data = {"timestamp": ts, "event_type": "sudo_command", "username": match.group(1), "severity": "info", "message": "sudo " + match.group(2).strip()}
-        elif "sshd" in line and "Accepted password" in line:
-            match = re.search(r"^(\S+)\s+.*?sshd.*?Accepted password for (\S+) from (\S+) port (\d+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "ssh_login_success", "auth_method": "password", "username": match.group(2), "ip_address": match.group(3), "port": match.group(4), "severity": "info"}
-        elif "sshd" in line and "Accepted publickey" in line:
-            match = re.search(r"^(\S+)\s+.*?Accepted publickey for (\S+) from (\S+) port (\d+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "ssh_login_success", "auth_method": "publickey", "username": match.group(2), "ip_address": match.group(3), "port": match.group(4), "severity": "info"}
-        elif "sshd" in line and "Failed password" in line:
-            match = re.search(r"^(\S+)\s+.*?Failed password for (?:invalid user )?(\S+) from (\S+) port (\d+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "ssh_login_failed", "auth_method": "password", "username": match.group(2), "ip_address": match.group(3), "port": match.group(4), "severity": "warning"}
-        elif "sshd" in line and "Invalid user" in line:
-            match = re.search(r"^(\S+)\s+.*?Invalid user (\S+) from (\S+) port (\d+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "ssh_invalid_user", "auth_method": "unknown", "username": match.group(2), "ip_address": match.group(3), "port": match.group(4), "severity": "high"}
-        elif "sshd" in line and "session closed" in line:
-            match = re.search(r"^(\S+)\s+.*?session closed for user (\S+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "session_closed", "username": match.group(2), "severity": "info"}
-        elif "sshd" in line and ("Connection closed by" in line or "Connection reset by" in line) and "preauth" in line:
-            # Real sshd uses several shapes and IPv6 is common: "Connection closed by 1.2.3.4 port 22 [preauth]",
-            # "Connection reset by 2001:db8::1 port 22 [preauth]", "... by authenticating user root 1.2.3.4 port 22 [preauth]".
-            match = re.search(r"Connection (?:closed|reset) by\s+(?:(?:invalid|authenticating) user \S+\s+)?([0-9A-Fa-f.:]+)\s+port\s+(\d+)", line)
-            if match:
-                log_data = {"timestamp": ts, "event_type": "connection_closed_preauth", "ip_address": match.group(1), "port": match.group(2), "severity": "low"}
-        return log_data
+                return {"timestamp": ts, "event_type": "sudo_command", "username": match.group(1), "severity": "info", "message": "sudo " + match.group(2).strip()}
+            return None
+        match = re.search(r"session closed for user (\S+)$", msg)
+        if match and msg.startswith("pam_"):
+            return {"timestamp": ts, "event_type": "session_closed", "username": match.group(1), "severity": "info"}
+        for event_type, severity, pattern in self.SSHD_PATTERNS:
+            match = pattern.match(msg)
+            if not match:
+                continue
+            g = match.groups()
+            if len(g) == 4:
+                method, user, ip, port = g
+            else:
+                user, ip, port = g
+                method = "unknown" if event_type == "ssh_invalid_user" else None
+            if not self.valid_ip(ip):
+                return None
+            data = {"timestamp": ts, "event_type": event_type, "ip_address": ip, "port": port, "severity": severity}
+            if method:
+                data["auth_method"] = method
+            if event_type != "connection_closed_preauth":
+                data["username"] = user
+            return data
+        return None
 
     ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)")
     SYSLOG_TS = re.compile(r"^([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})")
