@@ -5,13 +5,9 @@ const db = require("../db");
 const { signToken } = require("../middleware/auth");
 const { mirrorRegistration } = require("../oracleSync");
 const { recordLogin } = require("../loginLog");
+const { verifyHuman, captchaConfig, CAPTCHA_FAILED } = require("../captcha");
 
 const router = express.Router();
-
-const SECRET = process.env.JWT_SECRET || "change-me";
-const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || "";
-const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET || "";
-const CAPTCHA_TTL_MS = 5 * 60 * 1000;
 
 const OAUTH = {
   google: {
@@ -45,61 +41,11 @@ function recordRegistration(userId, method, req) {
   mirrorRegistration(user, { id: info.lastInsertRowid, method, ip: req.ip, userAgent, createdAt });
 }
 
-/* ---------- Anti-bot ---------- */
-function sign(payload) {
-  return crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
-}
-
-// Built-in fallback: a signed, expiring arithmetic challenge (no external service needed).
-function newChallenge() {
-  const a = crypto.randomInt(1, 20);
-  const b = crypto.randomInt(1, 20);
-  const exp = Date.now() + CAPTCHA_TTL_MS;
-  const nonce = crypto.randomBytes(8).toString("hex");
-  const body = `${a + b}.${exp}.${nonce}`;
-  return { question: `${a} + ${b} = ?`, token: `${body}.${sign(body)}` };
-}
-
-const usedChallenges = new Map();
-function checkChallenge(token, answer) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 4) return false;
-  const [sum, exp, nonce, sig] = parts;
-  const expected = sign(`${sum}.${exp}.${nonce}`);
-  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
-  const now = Date.now();
-  for (const [k, v] of usedChallenges) if (v < now) usedChallenges.delete(k);
-  if (Number(exp) < now || usedChallenges.has(nonce)) return false;
-  if (String(answer).trim() !== sum) return false;
-  usedChallenges.set(nonce, Number(exp)); // one-time use
-  return true;
-}
-
-async function verifyHuman(req) {
-  const { captcha_token, captcha_answer } = req.body || {};
-  if (TURNSTILE_SECRET) {
-    if (!captcha_token) return false;
-    try {
-      const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ secret: TURNSTILE_SECRET, response: captcha_token, remoteip: req.ip || "" }),
-      });
-      return !!(await r.json()).success;
-    } catch (e) {
-      return false;
-    }
-  }
-  return checkChallenge(captcha_token, captcha_answer);
-}
-
 router.get("/api/auth/config", (req, res) => {
-  const out = {
-    turnstileSiteKey: TURNSTILE_SITE_KEY && TURNSTILE_SECRET ? TURNSTILE_SITE_KEY : null,
+  res.json({
+    ...captchaConfig(),
     providers: Object.keys(OAUTH).filter((k) => OAUTH[k].id && OAUTH[k].secret),
-  };
-  if (!out.turnstileSiteKey) out.challenge = newChallenge();
-  res.json(out);
+  });
 });
 
 /* ---------- brute-force protection ---------- */
@@ -126,12 +72,15 @@ function noteFailure(req) {
 }
 
 /* ---------- Local login / register ---------- */
-router.post("/api/auth/login", (req, res) => {
+router.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" });
   }
   if (tooManyFailures(req, res)) return;
+  if (!(await verifyHuman(req))) {
+    return res.status(400).json({ error: CAPTCHA_FAILED });
+  }
   const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
   if (!user || (user.provider && user.provider !== "local") || !bcrypt.compareSync(password, user.password_hash)) {
     noteFailure(req);
@@ -154,7 +103,7 @@ router.post("/api/auth/register", async (req, res) => {
     return res.status(400).json({ error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" });
   }
   if (!(await verifyHuman(req))) {
-    return res.status(400).json({ error: "ยืนยันว่าไม่ใช่บอทไม่ผ่าน กรุณาลองใหม่" });
+    return res.status(400).json({ error: CAPTCHA_FAILED });
   }
   if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) {
     return res.status(409).json({ error: "ชื่อผู้ใช้นี้ถูกใช้แล้ว" });

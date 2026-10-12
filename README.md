@@ -81,7 +81,11 @@ npm start
 
 - **Username + รหัสผ่าน**: ฟอร์มสมัครต้องกรอกรหัสผ่านสองครั้ง และผ่านการตรวจว่าไม่ใช่บอท:
   - ค่าเริ่มต้นเป็นโจทย์บวกเลขที่เซิร์ฟเวอร์เซ็นกำกับ ใช้ได้ครั้งเดียว หมดอายุใน 5 นาที (ไม่ต้องตั้งค่าอะไร)
-  - หรือใช้ **Cloudflare Turnstile** ถ้าตั้ง `TURNSTILE_SITE_KEY` และ `TURNSTILE_SECRET`
+  - หรือใช้ **Google reCAPTCHA v2** (ช่องติ๊ก "ฉันไม่ใช่โปรแกรมอัตโนมัติ" ที่อาจให้เลือกรูป) ถ้าตั้ง `RECAPTCHA_SITE_KEY` และ `RECAPTCHA_SECRET` ขอ key ได้ที่ https://www.google.com/recaptcha/admin (เลือก v2 แบบ checkbox แล้วใส่โดเมนของคุณกับ `localhost`)
+  - หรือใช้ **Cloudflare Turnstile** ถ้าตั้ง `TURNSTILE_SITE_KEY` และ `TURNSTILE_SECRET` (ถ้าตั้งทั้งสองแบบ จะใช้ reCAPTCHA)
+- **CAPTCHA ที่อื่น** (ใช้ตัวเดียวกับตอนสมัคร โค้ดอยู่ใน `captcha.js`):
+  - **ล็อกอิน**: ถามทุกครั้ง (ผิดครบ 10 ครั้งจาก IP เดียวยังต้องรอ 15 นาทีเหมือนเดิม)
+  - **ลืมรหัสผ่าน**: ถามทุกครั้ง เพราะแต่ละคำขอส่งอีเมลได้
 - **Google / GitHub**: ปุ่มจะโผล่เองเมื่อตั้ง client id/secret แล้ว ให้สร้าง OAuth app ที่แต่ละเจ้า โดยใช้ callback URL ดังนี้
   - `<PUBLIC_URL>/api/auth/oauth/google/callback`
   - `<PUBLIC_URL>/api/auth/oauth/github/callback`
@@ -159,6 +163,7 @@ LINE Notify ปิดบริการไปแล้ว (31 มี.ค. 2025) 
 | `DB_PATH` | ไฟล์ SQLite (ค่าเริ่มต้น `./data/ssh-monitor.db`) |
 | `TRUST_PROXY` | ตั้งเป็น `1` เมื่ออยู่หลัง reverse proxy ตัวเดียว เพื่อให้ได้ IP จริงของผู้ใช้ |
 | `PUBLIC_URL` | URL สาธารณะของเว็บ ใช้ทำ callback ของ OAuth |
+| `RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET` | ใช้ Google reCAPTCHA v2 (checkbox) แทนโจทย์ในตัว |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | ใช้ Cloudflare Turnstile แทนโจทย์ในตัว |
 | `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` | เปิดการสมัครด้วย Google / GitHub |
 | `ALERT_MIN_RISK` | ความเสี่ยงต่ำสุดที่จะส่งแจ้งเตือน (`LOW`..`CRITICAL` ค่าเริ่มต้น `HIGH`) |
@@ -215,7 +220,7 @@ Endpoint ของ agent ใช้ `Authorization: Bearer <API key>` ส่ว�
 | Endpoint | การยืนยันตัวตน | หน้าที่ |
 |---|---|---|
 | `POST /api/logs` | API key | รับ log จาก agent |
-| `GET /api/auth/config` | - | ตัวเลือกตอนสมัคร (โจทย์ป้องกันบอท, provider OAuth ที่เปิดอยู่) |
+| `GET /api/auth/config` | - | ตัวเลือกหน้าล็อกอิน/สมัคร (โจทย์ป้องกันบอท, provider OAuth ที่เปิดอยู่) |
 | `POST /api/auth/login`, `POST /api/auth/register` | - | ยืนยันตัวตน (ได้ JWT กลับมา) |
 | `GET /api/auth/oauth/:provider` (+ `/callback`) | - | ล็อกอิน Google / GitHub |
 | `GET /api/my-servers`, `POST /api/servers`, `POST /api/servers/:id/regenerate-key`, `DELETE /api/servers/:id` | JWT | จัดการเซิร์ฟเวอร์และ key ของตัวเอง |

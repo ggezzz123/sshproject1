@@ -5,6 +5,7 @@ const db = require("../db");
 const { jwtAuth, signToken } = require("../middleware/auth");
 const { sendMail, enabled: mailEnabled } = require("../mailer");
 const { recentLogins } = require("../loginLog");
+const { verifyHuman, CAPTCHA_FAILED } = require("../captcha");
 
 const router = express.Router();
 
@@ -96,6 +97,8 @@ router.post("/api/auth/forgot-password", async (req, res) => {
   // Same answer whether or not the account exists, so this can't be used to discover accounts
   const answer = { ok: true, mail_configured: mailEnabled };
   if (!id) return res.status(400).json({ error: "กรุณากรอกอีเมลหรือชื่อผู้ใช้" });
+  // Each request can send an email, so bots must not be able to call this freely
+  if (!(await verifyHuman(req))) return res.status(400).json({ error: CAPTCHA_FAILED });
   const user = db.prepare("SELECT * FROM users WHERE lower(email) = lower(?) OR username = ?").get(id, id);
   if (!user || !isLocal(user) || !user.email) return res.json(answer);
   if (Date.now() - (lastReset.get(user.id) || 0) < 60000) return res.json(answer);

@@ -140,6 +140,43 @@ function ThemeToggle({ floating }) {
 }
 
 /* ---------- Login / Register ---------- */
+// Loads a widget script once and resolves when its global is ready
+function loadWidgetScript(src, globalName) {
+  if (window[globalName] && (globalName !== "grecaptcha" || window.grecaptcha.render)) return Promise.resolve();
+  if (!loadWidgetScript.pending) loadWidgetScript.pending = {};
+  if (!loadWidgetScript.pending[src]) {
+    loadWidgetScript.pending[src] = new Promise((resolve) => {
+      // reCAPTCHA calls back by name once render() is usable
+      window.__onRecaptchaReady = resolve;
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      if (globalName !== "grecaptcha") s.onload = resolve;
+      document.head.appendChild(s);
+    });
+  }
+  return loadWidgetScript.pending[src];
+}
+
+function RecaptchaBox({ siteKey, onChange }) {
+  const boxRef = useRef(null);
+  useEffect(() => {
+    let id, alive = true;
+    loadWidgetScript("https://www.google.com/recaptcha/api.js?onload=__onRecaptchaReady&render=explicit&hl=th", "grecaptcha").then(() => {
+      if (!alive || !boxRef.current) return;
+      id = window.grecaptcha.render(boxRef.current, {
+        sitekey: siteKey,
+        theme: document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light",
+        callback: (t) => onChange({ captcha_token: t }),
+        "expired-callback": () => onChange({ captcha_token: "" }),
+        "error-callback": () => onChange({ captcha_token: "" }),
+      });
+    });
+    return () => { alive = false; };
+  }, [siteKey]);
+  return <div className="field recaptcha-box" ref={boxRef} />;
+}
+
 function Captcha({ cfg, onChange }) {
   const boxRef = useRef(null);
   useEffect(() => {
@@ -165,6 +202,7 @@ function Captcha({ cfg, onChange }) {
     return () => { if (id !== undefined && window.turnstile) window.turnstile.remove(id); };
   }, [cfg.turnstileSiteKey]);
 
+  if (cfg.recaptchaSiteKey) return <RecaptchaBox siteKey={cfg.recaptchaSiteKey} onChange={onChange} />;
   if (cfg.turnstileSiteKey) return <div className="field" ref={boxRef} />;
   if (!cfg.challenge) return null;
   return (
@@ -184,6 +222,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
   const [confirm, setConfirm] = useState("");
   const [identifier, setIdentifier] = useState("");
   const [captcha, setCaptcha] = useState({});
+  const [captchaRound, setCaptchaRound] = useState(0);
   const [cfg, setCfg] = useState({ providers: [] });
   const [info, setInfo] = useState("");
   const [error, setError] = useState(() => {
@@ -193,7 +232,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
   const [loading, setLoading] = useState(false);
 
   async function loadConfig() {
-    try { setCfg(await api("/api/auth/config")); setCaptcha({}); } catch (e) {}
+    try { setCfg(await api("/api/auth/config")); setCaptcha({}); setCaptchaRound((n) => n + 1); } catch (e) {}
   }
   useEffect(() => { loadConfig(); }, []);
 
@@ -208,7 +247,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
     setLoading(true);
     try {
       if (mode === "forgot") {
-        const d = await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ identifier }) });
+        const d = await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ identifier, ...captcha }) });
         setInfo(d.mail_configured
           ? "ถ้ามีบัญชีที่ใช้อีเมลหรือชื่อผู้ใช้นี้ ระบบได้ส่งลิงก์รีเซ็ตไปแล้ว กรุณาตรวจกล่องจดหมาย (และโฟลเดอร์สแปม)"
           : "เซิร์ฟเวอร์นี้ยังไม่ได้ตั้งค่าการส่งอีเมล จึงส่งลิงก์รีเซ็ตไม่ได้ กรุณาติดต่อผู้ดูแลระบบ");
@@ -225,13 +264,14 @@ function Login({ onLogin, resetToken, onResetDone }) {
       }
       const body = mode === "register"
         ? { username, email, password, confirm_password: confirm, ...captcha }
-        : { username, password };
+        : { username, password, ...captcha };
       const data = await api("/api/auth/" + mode, { method: "POST", body: JSON.stringify(body) });
       setToken(data.token);
       onLogin(data.user);
     } catch (err) {
       setError(err.message === "กรุณาล็อกอินใหม่" && mode === "login" ? "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" : err.message);
-      if (mode === "register") loadConfig(); // challenges are single-use
+      // Challenges are single-use, and a failed login may now require one
+      if (mode !== "reset") loadConfig();
     } finally {
       setLoading(false);
     }
@@ -289,7 +329,7 @@ function Login({ onLogin, resetToken, onResetDone }) {
             <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </div>
         )}
-        {mode === "register" && <Captcha key={cfg.challenge ? cfg.challenge.token : "ts"} cfg={cfg} onChange={setCaptcha} />}
+        {mode !== "reset" && <Captcha key={mode + captchaRound} cfg={cfg} onChange={setCaptcha} />}
         <button className="btn primary" style={{ width: "100%" }} disabled={loading}>
           {loading ? "กรุณารอสักครู่..." : title}
         </button>
