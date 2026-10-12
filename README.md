@@ -26,6 +26,7 @@
 - **แผนที่ประเทศผู้โจมตี**: ดูว่าประเทศไหนพยายาม login เข้ามามากที่สุด (ลูกโลก 3D หมุนได้บน Dashboard)
 - **สมัครสมาชิกพร้อมป้องกันบอท**: ยืนยันรหัสผ่าน, ตรวจว่าไม่ใช่บอท, และสมัครด้วย Google / GitHub
 - **แจ้งเตือน** ไป LINE, Discord, Slack, Telegram หรือ webhook ทั่วไป
+- **บล็อก IP อัตโนมัติ + Blacklist / Whitelist**: IP ที่โจมตีถึงระดับที่ตั้งไว้ถูกบล็อกให้เอง (agent ใส่กฎ iptables) แจ้งเตือนเข้า LINE และจัดการรายการได้ในเมนู Blacklist / Whitelist
 - **สำเนาไป Oracle (ไม่บังคับ)**: ข้อมูลการสมัครใหม่จะถูกคัดลอกไปเก็บที่ Oracle บนเครื่องของคุณเอง เปิดดูด้วย Oracle SQL Developer ได้
 
 ## โครงสร้างโปรเจกต์
@@ -37,6 +38,7 @@
 | `routes/` | API: `authRoutes` (login / สมัคร / OAuth), `agentRoutes` (รับ log), `serverRoutes`, `logRoutes`, `incidentRoutes`, `dashboardRoutes`, `profileRoutes` |
 | `detectionEngine.js`, `analysisEngine.js` | คำนวณระดับความเสี่ยงและตรวจรูปแบบการโจมตี |
 | `notifier.js` | ส่งแจ้งเตือน incident |
+| `blocklist.js`, `routes/blocklistRoutes.js` | Blacklist / Whitelist, บล็อก IP อัตโนมัติ และรายการที่ agent ดึงไปใส่ firewall |
 | `geo.js` | แปลง IP เป็นประเทศ (ฐานข้อมูล offline `geoip-country`) |
 | `mailer.js`, `routes/profileRoutes.js` | ส่งอีเมล และ API ของหน้าโปรไฟล์ |
 | `simulation.js`, `routes/simulateRoutes.js` | สถานการณ์จำลองการโจมตี และ API ของหน้าทดสอบการโจมตี |
@@ -118,13 +120,27 @@ LINE Notify ปิดบริการไปแล้ว (31 มี.ค. 2025) 
 - ถ้าต้องการให้ LINE ใดได้รับแจ้งเตือนทุกเซิร์ฟเวอร์ (เช่น admin) ใส่ `LINE_TO=<user/group ID>` เพิ่ม
 - แพ็กเกจฟรีของ LINE OA ส่งข้อความได้จำนวนจำกัดต่อเดือน ดูโควตาได้ใน LINE Official Account Manager
 
+## บล็อก IP อัตโนมัติ และ Blacklist / Whitelist
+
+เมนู **Blacklist / Whitelist** ในแดชบอร์ด
+
+- **บล็อกอัตโนมัติ** (เปิดไว้เป็นค่าเริ่มต้น): เมื่อเหตุการณ์ของ IP ใดถึงระดับความเสี่ยงที่ตั้งไว้ (ค่าเริ่มต้น "สูง") ระบบจะเพิ่ม IP นั้นเข้า Blacklist ตามระยะเวลาที่ตั้ง (ค่าเริ่มต้น 1 วัน หรือถาวร) แล้วส่งแจ้งเตือน "🚫 บล็อก IP อัตโนมัติ" เข้า LINE ของเจ้าของเซิร์ฟเวอร์ (และ `LINE_TO` / ช่องทางอื่นที่ตั้งไว้) ผู้ใช้แต่ละคนตั้งค่าของตัวเองได้
+- **Blacklist**: เพิ่ม IP หรือช่วง CIDR เองได้ (หรือกด "บล็อก IP" ในหน้าเหตุการณ์) ปลดบล็อก หรือย้ายไป Whitelist ได้
+- **Whitelist**: IP ที่ไว้ใจ จะไม่ถูกบล็อกอัตโนมัติ และบน agent กฎ ACCEPT ของ Whitelist มาก่อนกฎ DROP เสมอ ควรใส่ IP ที่ใช้ SSH ประจำไว้
+- กฎของผู้ใช้มีผลกับทุกเซิร์ฟเวอร์ของผู้ใช้คนนั้น admin เพิ่มกฎแบบ "ใช้กับทุกเซิร์ฟเวอร์ในระบบ" ได้
+- ระบบไม่ยอมให้บล็อก IP ที่คุณใช้เปิดหน้าเว็บอยู่ และไม่บล็อก loopback
+
+**ฝั่ง agent:** ทุก 30 วินาที (`BLOCK_SYNC_INTERVAL`) agent ดึงรายการจาก `GET /api/agent/blocklist` แล้วใส่ลง chain `SSHMON` ของ iptables / ip6tables ซึ่งรับเฉพาะทราฟฟิกที่เข้าพอร์ต SSH (อ่านจาก `/etc/ssh/sshd_config` หรือกำหนด `SSH_PORTS`) จึงไม่ยุ่งกับกฎ firewall อื่นของเครื่อง ปิดได้ด้วย `BLOCK_ENABLED=false` ใน `/opt/ssh-monitor/.env` หน้า Blacklist / Whitelist แสดงว่าแต่ละเครื่องซิงก์ล่าสุดเมื่อไร **agent ที่ติดตั้งไว้ก่อนหน้านี้ต้องรันคำสั่งติดตั้งซ้ำหนึ่งครั้ง** เพื่อให้ได้ agent รุ่นที่บล็อกได้
+
+ดูกฎบนเครื่อง: `sudo iptables -L SSHMON -n` · ล้างกฎทั้งหมดของ agent: `sudo iptables -F SSHMON`
+
 ## ทดสอบการโจมตี
 
 เมนู **ทดสอบการโจมตี** (เฉพาะบัญชี admin) จำลองการโจมตี SSH 11 แบบ (เดารหัสผ่าน, เดาชื่อผู้ใช้, password spraying, credential stuffing, สแกนพอร์ต, โจมตีหลายเครื่อง ฯลฯ) เพื่อดูว่าระบบตรวจจับได้ถูกต้อง แต่ละแบบบอกผลที่ควรได้ไว้ และกดจำลองทีละแบบหรือทั้งหมดได้
 
 - ข้อมูลจำลองเข้าเฉพาะ **เซิร์ฟเวอร์ทดสอบ** ของผู้ใช้คนนั้น (`ทดสอบ-1`, `ทดสอบ-2` สร้างให้อัตโนมัติ) ไม่ปนกับเซิร์ฟเวอร์จริง
 - IP ผู้โจมตีอยู่ในช่วงที่สงวนไว้สำหรับเอกสาร (RFC 5737) ประเทศบนลูกโลกเป็นค่าสมมติ
-- ปกติจะไม่ส่งแจ้งเตือนจริง ติ๊ก "ส่งแจ้งเตือนจริงด้วย" ถ้าอยากทดสอบ LINE/Discord ฯลฯ (ข้อความขึ้นต้นด้วย `[TEST]`)
+- ปกติจะไม่ส่งแจ้งเตือนจริงและไม่บล็อก IP อัตโนมัติ ติ๊ก "ส่งแจ้งเตือนจริงด้วย" ถ้าอยากทดสอบ LINE/Discord ฯลฯ และการบล็อกอัตโนมัติ (ข้อความขึ้นต้นด้วย `[TEST]`)
 - ปุ่ม "ลบข้อมูลทดสอบทั้งหมด" ลบเซิร์ฟเวอร์ทดสอบพร้อม log และเหตุการณ์ที่จำลองไว้
 
 สถานการณ์เดียวกันนี้รันจาก command line ได้ด้วย `node tools/simulate.js` (ทั้งสองทางใช้ `simulation.js` ร่วมกัน)
@@ -168,6 +184,7 @@ LINE Notify ปิดบริการไปแล้ว (31 มี.ค. 2025) 
 | `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` | เปิดการสมัครด้วย Google / GitHub |
 | `ALERT_MIN_RISK` | ความเสี่ยงต่ำสุดที่จะส่งแจ้งเตือน (`LOW`..`CRITICAL` ค่าเริ่มต้น `HIGH`) |
 | `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET`, `LINE_TO` | แจ้งเตือนทาง LINE (ดูหัวข้อด้านบน) |
+| `AUTO_BLOCK`, `AUTO_BLOCK_MIN_RISK`, `AUTO_BLOCK_MINUTES` | ค่าเริ่มต้นของการบล็อกอัตโนมัติ (`true`, `HIGH`, `1440` นาที; `0` = ถาวร) ผู้ใช้เปลี่ยนของตัวเองได้ในหน้า Blacklist / Whitelist |
 | `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`, `TELEGRAM_*`, `WEBHOOK_URL` | ช่องทางแจ้งเตือน (ตั้งช่องไหนก็ใช้ช่องนั้น) |
 | `LOG_TZ_OFFSET`, `ALERT_TZ` | เขตเวลาของ log และกฎ login นอกเวลาทำการ |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | ส่งอีเมลยืนยัน (ไม่ตั้งก็ได้) |
@@ -220,6 +237,8 @@ Endpoint ของ agent ใช้ `Authorization: Bearer <API key>` ส่ว�
 | Endpoint | การยืนยันตัวตน | หน้าที่ |
 |---|---|---|
 | `POST /api/logs` | API key | รับ log จาก agent |
+| `GET /api/agent/blocklist` | API key | รายการ IP ที่ agent ต้องบล็อก / อนุญาต (`{version, block, allow}`) |
+| `GET /api/ip-rules`, `POST /api/ip-rules`, `DELETE /api/ip-rules/:id`, `POST /api/ip-rules/:id/move`, `PUT /api/ip-rules/settings` | JWT | Blacklist / Whitelist และการตั้งค่าบล็อกอัตโนมัติ |
 | `GET /api/auth/config` | - | ตัวเลือกหน้าล็อกอิน/สมัคร (โจทย์ป้องกันบอท, provider OAuth ที่เปิดอยู่) |
 | `POST /api/auth/login`, `POST /api/auth/register` | - | ยืนยันตัวตน (ได้ JWT กลับมา) |
 | `GET /api/auth/oauth/:provider` (+ `/callback`) | - | ล็อกอิน Google / GitHub |

@@ -97,6 +97,7 @@ const ICONS = {
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>,
   filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />,
   trash: <><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></>,
+  ban: <><circle cx="12" cy="12" r="10" /><path d="m4.9 4.9 14.2 14.2" /></>,
   refresh: <><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5M3 21v-5h5" /></>,
 };
 function Icon({ name, size = 18 }) {
@@ -1264,12 +1265,23 @@ function Incidents({ go }) {
     load();
   }
 
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  async function block(ip) {
+    if (!confirm(`บล็อก ${ip} บนทุกเซิร์ฟเวอร์ของคุณ (ถาวรจนกว่าจะปลดบล็อก)?`)) return;
+    try {
+      await api("/api/ip-rules", { method: "POST", body: JSON.stringify({ ip, kind: "block", reason: "บล็อกจากหน้าเหตุการณ์" }) });
+      setMsg({ ok: `บล็อก ${ip} แล้ว · ดูหรือปลดบล็อกได้ที่เมนู Blacklist / Whitelist`, err: "" });
+    } catch (e) { setMsg({ ok: "", err: e.message }); }
+  }
+
   return (
     <div>
       <div className="page-title">
         <h1>เหตุการณ์</h1>
         <div className="sub">การโจมตีที่ระบบตรวจพบ · กด "วิเคราะห์" เพื่อดูรายละเอียดของ IP และกด "แก้ไขแล้ว" เมื่อจัดการเสร็จ</div>
       </div>
+      {msg.ok && <div className="ok-banner">{msg.ok}</div>}
+      {msg.err && <div className="error-banner">{msg.err}</div>}
       <div className="card">
         {loading ? (
           <div className="empty">กำลังโหลด...</div>
@@ -1297,6 +1309,7 @@ function Incidents({ go }) {
                     <td><Chip kind={i.status === "OPEN" ? "error" : "success"}>{STATUS_TH[i.status] || i.status}</Chip></td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {i.source_ip && <button className="btn ghost sm" onClick={() => setAnalyze(i.source_ip)}>วิเคราะห์</button>}
+                      {i.source_ip && <button className="btn ghost sm danger" onClick={() => block(i.source_ip)}><Icon name="ban" size={14} /> บล็อก IP</button>}
                       {i.status === "OPEN" ? (
                         <button className="btn ghost sm" onClick={() => setStatus(i.id, "RESOLVED")}>แก้ไขแล้ว</button>
                       ) : (
@@ -1311,6 +1324,220 @@ function Incidents({ go }) {
         )}
       </div>
       {analyze && <AnalysisModal ip={analyze} onClose={() => setAnalyze(null)} />}
+    </div>
+  );
+}
+
+/* ---------- Blacklist / Whitelist ---------- */
+const BLOCK_DURATIONS = [
+  { v: 60, label: "1 ชั่วโมง" }, { v: 360, label: "6 ชั่วโมง" }, { v: 1440, label: "1 วัน" },
+  { v: 10080, label: "7 วัน" }, { v: 43200, label: "30 วัน" }, { v: 0, label: "ถาวร" },
+];
+
+function AutoBlockCard({ settings, onSaved }) {
+  const [f, setF] = useState(settings);
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setF(settings), [settings]);
+  const dirty = JSON.stringify(f) !== JSON.stringify(settings);
+  const durations = BLOCK_DURATIONS.some((d) => d.v === f.minutes) ? BLOCK_DURATIONS : [...BLOCK_DURATIONS, { v: f.minutes, label: `${f.minutes} นาที` }];
+
+  async function save() {
+    setBusy(true); setMsg({ ok: "", err: "" });
+    try {
+      const s = await api("/api/ip-rules/settings", { method: "PUT", body: JSON.stringify(f) });
+      onSaved(s); setMsg({ ok: "บันทึกการตั้งค่าแล้ว", err: "" });
+    } catch (e) { setMsg({ ok: "", err: e.message }); } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="card">
+      <h4 style={{ marginBottom: 4 }}>บล็อกอัตโนมัติ</h4>
+      <div className="field-hint" style={{ marginBottom: 12 }}>
+        เมื่อตรวจพบการโจมตีถึงระดับที่กำหนด ระบบจะเพิ่ม IP ผู้โจมตีเข้า Blacklist ให้เอง agent บนทุกเครื่องของคุณจะปิดพอร์ต SSH ใส่ IP นั้น
+        แล้วแจ้งเตือนทาง LINE (IP ใน Whitelist จะไม่ถูกบล็อก)
+      </div>
+      {msg.ok && <div className="ok-banner">{msg.ok}</div>}
+      {msg.err && <div className="error-banner">{msg.err}</div>}
+      <label className="sim-check" style={{ marginBottom: 12 }}>
+        <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
+        เปิดการบล็อกอัตโนมัติ
+      </label>
+      <div className="toolbar" style={{ marginBottom: 0 }}>
+        <select className="input" value={f.min_risk} disabled={!f.enabled} aria-label="ระดับความเสี่ยงขั้นต่ำ"
+          onChange={(e) => setF({ ...f, min_risk: e.target.value })}>
+          {["MEDIUM", "HIGH", "CRITICAL"].map((r) => <option key={r} value={r}>เมื่อความเสี่ยง{RISK_TH[r]}ขึ้นไป</option>)}
+        </select>
+        <select className="input" value={f.minutes} disabled={!f.enabled} aria-label="ระยะเวลาบล็อก"
+          onChange={(e) => setF({ ...f, minutes: Number(e.target.value) })}>
+          {durations.map((d) => <option key={d.v} value={d.v}>บล็อกนาน {d.label}</option>)}
+        </select>
+        <button className="btn primary sm" disabled={busy || !dirty} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button>
+      </div>
+    </section>
+  );
+}
+
+function IpRules() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("block");
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState({ ip: "", reason: "", minutes: 0, global: false });
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  const [busy, setBusy] = useState(false);
+  const me = decodeToken(getToken() || "") || {};
+  const isAdmin = me.role === "admin";
+
+  const load = useCallback(() => api("/api/ip-rules").then(setData).catch((e) => setMsg({ ok: "", err: e.message })), []);
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+
+  async function run(fn, ok) {
+    setMsg({ ok: "", err: "" });
+    try { await fn(); setMsg({ ok, err: "" }); load(); } catch (e) { setMsg({ ok: "", err: e.message }); }
+  }
+  async function add(e) {
+    e.preventDefault();
+    setBusy(true);
+    const label = tab === "block" ? "Blacklist" : "Whitelist";
+    await run(async () => {
+      await api("/api/ip-rules", { method: "POST", body: JSON.stringify({ ...form, kind: tab }) });
+      setForm({ ip: "", reason: "", minutes: 0, global: false });
+    }, `เพิ่ม ${form.ip.trim()} เข้า ${label} แล้ว · agent จะอัปเดต firewall ภายในประมาณ 30 วินาที`);
+    setBusy(false);
+  }
+  const remove = (r) => {
+    if (!confirm(r.kind === "block" ? `ปลดบล็อก ${r.ip}?` : `เอา ${r.ip} ออกจาก Whitelist?`)) return;
+    run(() => api("/api/ip-rules/" + r.id, { method: "DELETE" }), r.kind === "block" ? `ปลดบล็อก ${r.ip} แล้ว` : `เอา ${r.ip} ออกจาก Whitelist แล้ว`);
+  };
+  const move = (r) => {
+    const to = r.kind === "block" ? "Whitelist" : "Blacklist";
+    if (!confirm(`ย้าย ${r.ip} ไป ${to}?`)) return;
+    run(() => api("/api/ip-rules/" + r.id + "/move", { method: "POST" }), `ย้าย ${r.ip} ไป ${to} แล้ว`);
+  };
+
+  if (!data) {
+    return (
+      <div>
+        <div className="page-title"><h1>Blacklist / Whitelist</h1></div>
+        {msg.err ? <div className="error-banner">{msg.err}</div> : <div className="card empty">กำลังโหลด...</div>}
+      </div>
+    );
+  }
+  const counts = { block: 0, allow: 0 };
+  data.rules.forEach((r) => { counts[r.kind]++; });
+  const needle = q.trim().toLowerCase();
+  const rows = data.rules.filter((r) => r.kind === tab &&
+    (!needle || [r.ip, r.reason, r.owner, r.server_hostname].some((v) => (v || "").toLowerCase().includes(needle))));
+  const canEdit = (r) => isAdmin || r.user_id === me.id;
+  const stale = (s) => !s.blocklist_synced_at || Date.now() - new Date(s.blocklist_synced_at) > 5 * 60e3;
+
+  return (
+    <div>
+      <div className="page-title">
+        <h1>Blacklist / Whitelist</h1>
+        <div className="sub">บล็อก IP ที่โจมตี และกำหนด IP ที่ไว้ใจได้ · มีผลกับทุกเซิร์ฟเวอร์ของคุณผ่าน firewall (iptables) ของ agent</div>
+      </div>
+      {msg.ok && <div className="ok-banner">{msg.ok}</div>}
+      {msg.err && <div className="error-banner">{msg.err}</div>}
+
+      <div className="grid-2" style={{ marginBottom: 20 }}>
+        <AutoBlockCard settings={data.settings} onSaved={(s) => setData({ ...data, settings: s })} />
+        <section className="card">
+          <h4 style={{ marginBottom: 4 }}>สถานะ agent</h4>
+          <div className="field-hint" style={{ marginBottom: 12 }}>agent ดึงรายการจากที่นี่ทุก 30 วินาที แล้วใส่เป็นกฎ firewall บนเครื่อง</div>
+          {data.servers.length === 0 ? <div className="field-hint">ยังไม่มีเซิร์ฟเวอร์</div> : (
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {data.servers.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.name}<div className="field-hint mono">{s.hostname || ""}</div></td>
+                      <td style={{ textAlign: "right" }}>
+                        {stale(s)
+                          ? <Chip kind="warning">{s.blocklist_synced_at ? "ซิงก์ล่าสุด " + fmtTime(s.blocklist_synced_at) : "ยังไม่เคยซิงก์"}</Chip>
+                          : <Chip kind="success">ซิงก์แล้ว {fmtTime(s.blocklist_synced_at)}</Chip>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {data.servers.some((s) => !s.blocklist_synced_at) && (
+            <div className="field-hint" style={{ marginTop: 10 }}>เครื่องที่ยังไม่เคยซิงก์อาจใช้ agent รุ่นเก่า ให้รันคำสั่งติดตั้งจากหน้าเซิร์ฟเวอร์ซ้ำเพื่ออัปเดต agent</div>
+          )}
+        </section>
+      </div>
+
+      <div className="card">
+        <div className="toolbar">
+          <div className="viz-toggle" role="tablist" aria-label="รายการ">
+            <button type="button" role="tab" aria-selected={tab === "block"} className={tab === "block" ? "on" : ""} onClick={() => setTab("block")}>Blacklist ({counts.block})</button>
+            <button type="button" role="tab" aria-selected={tab === "allow"} className={tab === "allow" ? "on" : ""} onClick={() => setTab("allow")}>Whitelist ({counts.allow})</button>
+          </div>
+          <input className="input" placeholder="ค้นหา IP / เหตุผล" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="btn secondary sm" onClick={load}><Icon name="refresh" size={14} /> รีเฟรช</button>
+        </div>
+
+        <form onSubmit={add} className="toolbar">
+          <input className="input mono" placeholder="IP หรือช่วง เช่น 203.0.113.5 / 203.0.113.0/24" value={form.ip} required
+            onChange={(e) => setForm({ ...form, ip: e.target.value })} />
+          <input className="input" placeholder="เหตุผล (ไม่บังคับ)" value={form.reason} maxLength={200}
+            onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+          {tab === "block" && (
+            <select className="input" value={form.minutes} aria-label="ระยะเวลาบล็อก" onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })}>
+              {BLOCK_DURATIONS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+            </select>
+          )}
+          {isAdmin && (
+            <label className="sim-check">
+              <input type="checkbox" checked={form.global} onChange={(e) => setForm({ ...form, global: e.target.checked })} /> ใช้กับทุกเซิร์ฟเวอร์ในระบบ
+            </label>
+          )}
+          <button className={"btn sm " + (tab === "block" ? "primary" : "secondary")} disabled={busy}>
+            {busy ? "กำลังเพิ่ม..." : tab === "block" ? "บล็อก IP" : "เพิ่มใน Whitelist"}
+          </button>
+        </form>
+        {data.your_ip && (
+          <div className="field-hint" style={{ marginBottom: 12 }}>
+            IP ของคุณตอนนี้: <span className="mono">{data.your_ip}</span> · ระบบไม่ยอมให้บล็อก IP ตัวเอง แนะนำให้เพิ่ม IP ที่ใช้ SSH ประจำไว้ใน Whitelist
+          </div>
+        )}
+
+        {rows.length === 0 ? (
+          <EmptyState icon="shield" title={needle ? "ไม่พบรายการที่ค้นหา" : tab === "block" ? "ยังไม่มี IP ที่ถูกบล็อก" : "ยังไม่มี IP ใน Whitelist"}>
+            {tab === "block"
+              ? "IP ที่โจมตีจะถูกเพิ่มที่นี่โดยอัตโนมัติ หรือเพิ่มเองจากฟอร์มด้านบน / ปุ่ม “บล็อก IP” ในหน้าเหตุการณ์"
+              : "ใส่ IP ที่ใช้งานประจำ (เช่น ออฟฟิศ / VPN) เพื่อไม่ให้ถูกบล็อกโดยไม่ตั้งใจ"}
+          </EmptyState>
+        ) : (
+          <div className="table-wrap">
+            <table className="sticky-actions">
+              <thead>
+                <tr><th>IP</th><th>ที่มา</th><th>เหตุผล</th>{isAdmin && <th>ใช้กับ</th>}<th>เพิ่มเมื่อ</th>{tab === "block" && <th>หมดอายุ</th>}<th>จัดการ</th></tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono"><b>{r.ip}</b></td>
+                    <td>{r.source === "auto" ? <Chip kind="error">อัตโนมัติ</Chip> : <Chip kind="muted">เพิ่มเอง</Chip>}</td>
+                    <td style={{ minWidth: 220 }}>{r.reason || "-"}{r.server_hostname && <div className="field-hint">โจมตี {r.server_hostname}</div>}</td>
+                    {isAdmin && <td>{r.user_id == null ? <Chip kind="info">ทุกเซิร์ฟเวอร์</Chip> : r.owner || "-"}</td>}
+                    <td className="mono">{fmtTime(r.created_at)}</td>
+                    {tab === "block" && <td className="mono">{r.expires_at ? fmtTime(r.expires_at) : "ถาวร"}</td>}
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {canEdit(r) ? <>
+                        <button className="btn ghost sm" onClick={() => move(r)}>{r.kind === "block" ? "ย้ายไป Whitelist" : "ย้ายไป Blacklist"}</button>
+                        <button className="btn ghost sm danger" onClick={() => remove(r)}><Icon name="trash" size={14} /> {r.kind === "block" ? "ปลดบล็อก" : "ลบ"}</button>
+                      </> : <span className="field-hint">ตั้งโดยผู้ดูแลระบบ</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1592,7 +1819,7 @@ function LineCard({ isAdmin }) {
     <section className="card">
       <h4 style={{ marginBottom: 8 }}><span className="line-dot" aria-hidden="true">LINE</span> แจ้งเตือนทาง LINE</h4>
       <div style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 14 }}>
-        รับแจ้งเตือนเข้า LINE ทันทีเมื่อเซิร์ฟเวอร์ของคุณถูกโจมตี (ระดับความเสี่ยงสูงขึ้นไป)
+        รับแจ้งเตือนเข้า LINE ทันทีเมื่อเซิร์ฟเวอร์ของคุณถูกโจมตี (ระดับความเสี่ยงสูงขึ้นไป) และเมื่อระบบบล็อก IP ผู้โจมตีอัตโนมัติ
       </div>
       {msg.ok && <div className="ok-banner">{msg.ok}</div>}
       {msg.err && <div className="error-banner">{msg.err}</div>}
@@ -2134,6 +2361,7 @@ const PAGES = [
   { key: "servers", label: "เซิร์ฟเวอร์", icon: "servers", hint: "เพิ่มเครื่อง รับ API key และคำสั่งติดตั้ง agent" },
   { key: "logs", label: "Log", icon: "logs", hint: "ประวัติการล็อกอิน SSH ทุกครั้ง" },
   { key: "incidents", label: "เหตุการณ์", icon: "incidents", hint: "การโจมตีที่ระบบตรวจพบ รอคุณตรวจสอบ" },
+  { key: "ipRules", label: "Blacklist / Whitelist", icon: "ban", hint: "IP ที่ถูกบล็อก (อัตโนมัติ/เพิ่มเอง) และ IP ที่ไว้ใจได้" },
   { key: "simulate", label: "ทดสอบการโจมตี", icon: "simulate", hint: "จำลองการโจมตีเพื่อลองระบบ (admin)" },
   { key: "users", label: "ผู้ใช้", icon: "users", hint: "บัญชีทั้งหมดในระบบ (admin)" },
 ];
@@ -2223,6 +2451,7 @@ function App() {
         {page === "servers" && <Servers go={setPage} />}
         {page === "logs" && <Logs go={setPage} />}
         {page === "incidents" && <Incidents go={setPage} />}
+        {page === "ipRules" && <IpRules />}
         {page === "guide" && <Guide go={setPage} isAdmin={isAdmin} />}
         {page === "simulate" && isAdmin && <AttackTest go={setPage} />}
         {page === "users" && isAdmin && <Users />}

@@ -11,6 +11,7 @@ function deleteUserAndData(userId) {
     db.prepare("DELETE FROM servers WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM registrations WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM logins WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM ip_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM users WHERE id = ?").run(userId);
     db.exec("COMMIT");
   } catch (e) {

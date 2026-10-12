@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 import re
+import shutil
+import ipaddress
+import subprocess
 
 # ตัวแปรเก็บเวลาที่อัปเดตค่า .env ล่าสุด
 last_env_refresh = 0
@@ -76,6 +79,7 @@ LOG_BACKUP_KEEP = int(os.getenv("LOG_BACKUP_KEEP", "5"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))
 SEND_INTERVAL = int(os.getenv("SEND_INTERVAL", "30"))
 SSL_VERIFY = os.getenv("SSL_VERIFY", "true").strip().lower() in ("1", "true", "yes", "on")
+BLOCK_SYNC_INTERVAL = int(os.getenv("BLOCK_SYNC_INTERVAL", "30"))
 
 
 def setup_logging():
@@ -325,6 +329,114 @@ class SSHLogMonitor(PatternMatchingEventHandler):
             self.save_failed_logs()
 
 
+class FirewallSync:
+    """Fetches the blacklist / whitelist from the monitor and enforces it with iptables / ip6tables.
+    Rules live in their own chain (SSHMON) that only SSH traffic jumps to, so the agent never touches
+    other firewall rules and the monitor server itself stays reachable for HTTPS."""
+
+    CHAIN = "SSHMON"
+
+    def __init__(self):
+        self.applied_version = None
+        self.applied_ports = None
+        self.applied_at = 0
+        self.last_sync = 0
+        self.warned = False
+
+    @staticmethod
+    def enabled():
+        return os.getenv("BLOCK_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+
+    @staticmethod
+    def list_url():
+        url = MONITOR_API_URL.rstrip("/")
+        base = url[: -len("/api/logs")] if url.endswith("/api/logs") else url
+        return base + "/api/agent/blocklist"
+
+    @staticmethod
+    def ssh_ports():
+        env = os.getenv("SSH_PORTS", "").strip()
+        ports = [p for p in re.split(r"[,\s]+", env) if p.isdigit()] if env else []
+        if not ports:
+            try:
+                with open("/etc/ssh/sshd_config", "r", encoding="utf-8", errors="ignore") as f:
+                    ports = [m.group(1) for m in (re.match(r"^\s*Port\s+(\d+)", l) for l in f) if m]
+            except OSError:
+                pass
+        return sorted(set(ports or ["22"]), key=int)[:15]  # multiport accepts at most 15 ports
+
+    @staticmethod
+    def run(cmd):
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def apply_family(self, tool, allow, block, ports):
+        w = [tool, "-w", "5"]
+        self.run(w + ["-N", self.CHAIN])  # fails harmlessly when it already exists
+        jump = ["INPUT", "-p", "tcp", "-m", "multiport", "--dports", ",".join(ports), "-j", self.CHAIN]
+        if self.applied_ports and self.applied_ports != ports:
+            old = ["INPUT", "-p", "tcp", "-m", "multiport", "--dports", ",".join(self.applied_ports), "-j", self.CHAIN]
+            while self.run(w + ["-D"] + old).returncode == 0:
+                pass
+        if self.run(w + ["-C"] + jump).returncode != 0:
+            self.run(w + ["-I"] + jump[:1] + ["1"] + jump[1:])
+        res = self.run(w + ["-F", self.CHAIN])
+        if res.returncode != 0:
+            raise RuntimeError(res.stderr.strip())
+        for ip in allow:
+            self.run(w + ["-A", self.CHAIN, "-s", ip, "-j", "ACCEPT"])
+        for ip in block:
+            self.run(w + ["-A", self.CHAIN, "-s", ip, "-j", "DROP"])
+
+    def sync(self, api_key):
+        if not self.enabled() or time.time() - self.last_sync < BLOCK_SYNC_INTERVAL:
+            return
+        self.last_sync = time.time()
+        try:
+            r = requests.get(self.list_url(), headers={"Authorization": f"Bearer {api_key}"}, timeout=10, verify=SSL_VERIFY)
+            if r.status_code != 200:
+                LOGGER.error("Blocklist fetch failed: %s %s", r.status_code, r.text[:200])
+                return
+            data = r.json()
+        except Exception as e:
+            LOGGER.error("Blocklist fetch failed: %s", e)
+            return
+
+        ports = self.ssh_ports()
+        # Re-apply every 10 minutes anyway, in case something else (e.g. a firewall reload) flushed the chain
+        if data.get("version") == self.applied_version and ports == self.applied_ports and time.time() - self.applied_at < 600:
+            return
+
+        def valid(items):
+            out = {4: [], 6: []}
+            for item in items or []:
+                try:
+                    net = ipaddress.ip_network(str(item), strict=False)
+                except ValueError:
+                    continue
+                out[net.version].append(str(net))
+            return out
+
+        allow, block = valid(data.get("allow")), valid(data.get("block"))
+        tools = {4: shutil.which("iptables"), 6: shutil.which("ip6tables")}
+        if not tools[4]:
+            if not self.warned:
+                LOGGER.warning("iptables not found: IP blocking from the dashboard is disabled on this host")
+                self.warned = True
+            return
+        try:
+            for v, tool in tools.items():
+                if tool:
+                    self.apply_family(tool, allow[v], block[v], ports)
+        except Exception as e:
+            LOGGER.error("Applying firewall rules failed: %s", e)
+            return
+        self.applied_version = data.get("version")
+        self.applied_ports = ports
+        self.applied_at = time.time()
+        LOGGER.info("Firewall updated: %d blocked, %d whitelisted (SSH ports %s)",
+                    len(block[4]) + len(block[6]), len(allow[4]) + len(allow[6]), ",".join(ports))
+
+
 def validate_api_connection(api_url, api_key):
     try:
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
@@ -369,11 +481,13 @@ def main():
     observer = Observer()
     observer.schedule(event_handler, path=LOG_PATH, recursive=False)
     observer.start()
+    firewall = FirewallSync()
     try:
         while True:
             time.sleep(1)
             # รีเฟรชค่า .env เป็นระยะ (ทุก ENV_REFRESH_INTERVAL วินาที)
             refresh_env()
+            firewall.sync(event_handler.api_key)
             if event_handler.batch_logs and (time.time() - event_handler.last_send_time) > SEND_INTERVAL:
                 event_handler.send_logs_to_server()
             # Retry failed logs every 5 minutes

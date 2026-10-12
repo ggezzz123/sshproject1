@@ -58,19 +58,27 @@ function formatMessage(incident) {
   return lines.filter(Boolean).join("\n");
 }
 
-// LINE accounts linked (Profile page) by the owner of the attacked server
-function ownerLineIds(incident) {
-  if (!line.configured() || !incident.server_id) return [];
-  const row = db
-    .prepare("SELECT u.line_user_id FROM servers s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND u.line_user_id IS NOT NULL")
-    .get(incident.server_id);
+// LINE account linked (Profile page) by the given user, normally the owner of the attacked server
+function ownerLineIds(userId) {
+  if (!line.configured() || userId == null) return [];
+  const row = db.prepare("SELECT line_user_id FROM users WHERE id = ? AND line_user_id IS NOT NULL").get(userId);
   const id = row && row.line_user_id;
   return id && id !== process.env.LINE_TO ? [id] : []; // LINE_TO already gets everything
 }
 
+function serverOwner(serverId) {
+  const row = serverId ? db.prepare("SELECT user_id FROM servers WHERE id = ?").get(serverId) : null;
+  return row ? row.user_id : null;
+}
+
 async function send(incident) {
-  const text = formatMessage(incident);
-  const owners = ownerLineIds(incident).map((to) =>
+  return sendText(formatMessage(incident), { userId: serverOwner(incident.server_id), payload: incident });
+}
+
+// Sends a message to the user's own LINE plus every channel configured in .env.
+// payload is what the generic webhook receives next to the text.
+async function sendText(text, { userId = null, payload = null } = {}) {
+  const owners = ownerLineIds(userId).map((to) =>
     line.push(to, text).catch((e) => console.error(`[alert:line-owner] ${e.message}`))
   );
   await Promise.all([
@@ -80,7 +88,7 @@ async function send(incident) {
         const res = await fetch(ch.url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(ch.headers || {}) },
-          body: JSON.stringify(ch.body(text, incident)),
+          body: JSON.stringify(ch.body(text, payload)),
           signal: AbortSignal.timeout(8000),
         });
         if (!res.ok) console.error(`[alert:${ch.name}] HTTP ${res.status} ${await res.text().catch(() => "")}`);
@@ -91,4 +99,4 @@ async function send(incident) {
   ]);
 }
 
-module.exports = { send, shouldAlert, formatMessage, channels };
+module.exports = { send, sendText, shouldAlert, formatMessage, channels };

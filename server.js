@@ -44,6 +44,7 @@ app.use(require("./routes/authRoutes"));
 app.use(require("./routes/profileRoutes"));
 app.use(require("./routes/simulateRoutes"));
 app.use(require("./routes/lineRoutes"));
+app.use(require("./routes/blocklistRoutes")); // before the "/api" routers: those require a dashboard login
 app.use("/api", require("./routes/serverRoutes"));
 app.use("/api", require("./routes/logRoutes"));
 app.use("/api", require("./routes/incidentRoutes"));

@@ -95,6 +95,18 @@ if ! python3 -m venv --help >/dev/null 2>&1; then
     install_python_venv
 fi
 
+# --- iptables is used to enforce the dashboard's blacklist (optional; the agent still monitors without it) ---
+if ! command -v iptables >/dev/null 2>&1; then
+    echo "==> Installing iptables (for IP blocking)..."
+    case "$PKG" in
+        apt)    apt-get install -y -qq iptables;;
+        dnf)    dnf install -y -q iptables;;
+        apk)    apk add --no-cache iptables ip6tables;;
+        zypper) zypper --non-interactive install iptables;;
+        pacman) pacman -S --noconfirm iptables;;
+    esac || echo "    Could not install iptables; IP blocking will be disabled on this host."
+fi
+
 # --- Prepare install dir ---
 mkdir -p "$INSTALL_DIR/logs"
 mkdir -p "$INSTALL_DIR/src/agent"
@@ -126,6 +138,10 @@ LOG_BACKUP_KEEP=5
 BATCH_SIZE=10
 SEND_INTERVAL=30
 SSL_VERIFY=true
+# Enforce the dashboard's Blacklist / Whitelist with iptables (false = monitor only)
+BLOCK_ENABLED=true
+BLOCK_SYNC_INTERVAL=30
+# SSH_PORTS=22   (default: read from /etc/ssh/sshd_config)
 EOF
 )
 chmod 600 "$ENV_FILE"

@@ -5,6 +5,7 @@
 const db = require("./db");
 const { calculateRisk, maxRisk, RISK_ORDER } = require("./detectionEngine");
 const notifier = require("./notifier");
+const blocklist = require("./blocklist");
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -136,6 +137,11 @@ function upsertIncident(f) {
   const row = db.prepare("SELECT * FROM incidents WHERE id = ?").get(id);
   const server = db.prepare("SELECT hostname, name, is_test, user_id FROM servers WHERE id = ?").get(f.serverId) || {};
   if (server.is_test && !testAlerts) return row;
+  try {
+    blocklist.autoBlock({ server, incident: row, risk, title: (server.is_test ? "[TEST] " : "") + (ATTACK_TYPES[f.type] || f.type) });
+  } catch (e) {
+    console.error("[autoblock]", e);
+  }
   if (notifier.shouldAlert(risk, row.alerted_risk)) {
     db.prepare("UPDATE incidents SET alerted_risk = ? WHERE id = ?").run(risk, id);
     if (alertIsDuplicate(server.user_id, f.type, f.key, risk)) return row;

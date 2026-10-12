@@ -74,6 +74,9 @@ addColumns("users", {
   token_version: "INTEGER DEFAULT 0",
   avatar: "TEXT",
   line_user_id: "VARCHAR(64)",
+  autoblock_enabled: "INTEGER",
+  autoblock_min_risk: "VARCHAR(20)",
+  autoblock_minutes: "INTEGER",
 });
 addColumns("ssh_logs", { country: "VARCHAR(2)" });
 db.exec(`
@@ -98,7 +101,7 @@ CREATE TABLE IF NOT EXISTS registrations (
     created_at DATETIME NOT NULL
 );
 `);
-addColumns("servers", { user_id: "INTEGER REFERENCES users(id)", is_test: "INTEGER DEFAULT 0" });
+addColumns("servers", { user_id: "INTEGER REFERENCES users(id)", is_test: "INTEGER DEFAULT 0", blocklist_synced_at: "DATETIME" });
 addColumns("incidents", {
   attack_type: "VARCHAR(50) DEFAULT 'brute_force'",
   incident_key: "VARCHAR(255)",
@@ -112,6 +115,21 @@ CREATE INDEX IF NOT EXISTS idx_logs_server_time ON ssh_logs(server_id, event_tim
 CREATE INDEX IF NOT EXISTS idx_logs_user ON ssh_logs(username);
 CREATE INDEX IF NOT EXISTS idx_logs_country ON ssh_logs(country);
 CREATE INDEX IF NOT EXISTS idx_incidents_key ON incidents(server_id, attack_type, incident_key, status);
+-- Blacklist (kind 'block') / whitelist (kind 'allow'). user_id NULL = global rule set by an admin.
+CREATE TABLE IF NOT EXISTS ip_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
+    ip VARCHAR(64) NOT NULL,
+    kind VARCHAR(10) NOT NULL,
+    source VARCHAR(10) NOT NULL DEFAULT 'manual',
+    reason TEXT,
+    incident_id INTEGER,
+    server_id INTEGER,
+    created_by INTEGER,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_rules_owner_ip ON ip_rules(IFNULL(user_id, 0), ip);
 `);
 
 module.exports = db;
