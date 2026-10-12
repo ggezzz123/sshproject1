@@ -77,6 +77,34 @@ const EVENT_LABEL = {
   connection_closed_preauth: "ตัดการเชื่อมต่อก่อนล็อกอิน",
 };
 
+const ICONS = {
+  dashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
+  servers: <><rect x="2" y="3" width="20" height="7" rx="2" /><rect x="2" y="14" width="20" height="7" rx="2" /><path d="M6 6.5h.01M6 17.5h.01M10 6.5h4M10 17.5h4" /></>,
+  logs: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
+  incidents: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M12 8v4M12 16h.01" /></>,
+  simulate: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />,
+  users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  key: <><circle cx="7.5" cy="15.5" r="5.5" /><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" /></>,
+  logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></>,
+  book: <><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z" /><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" /></>,
+  profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
+  activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  failed: <><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6M9 9l6 6" /></>,
+  success: <><circle cx="12" cy="12" r="10" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>,
+  target: <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4" /></>,
+  shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></>,
+  search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>,
+  download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>,
+  filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />,
+  refresh: <><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5M3 21v-5h5" /></>,
+};
+function Icon({ name, size = 18 }) {
+  return (
+    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
+  );
+}
+
 function Chip({ kind, children }) {
   return <span className={"chip " + (kind || "muted")}>{children}</span>;
 }
@@ -701,10 +729,10 @@ function AnalysisModal({ ip, onClose }) {
 
 /* ---------- Dashboard ---------- */
 const KPIS = [
-  { key: "total", label: "เหตุการณ์ทั้งหมด", up: null },
-  { key: "failed", label: "ล็อกอินไม่สำเร็จ", up: "bad" },
-  { key: "success", label: "ล็อกอินสำเร็จ", up: null },
-  { key: "attackers", label: "IP ผู้โจมตี", up: "bad" },
+  { key: "total", label: "เหตุการณ์ทั้งหมด", up: null, icon: "activity", tone: "blue" },
+  { key: "failed", label: "ล็อกอินไม่สำเร็จ", up: "bad", icon: "failed", tone: "red" },
+  { key: "success", label: "ล็อกอินสำเร็จ", up: null, icon: "success", tone: "green" },
+  { key: "attackers", label: "IP ผู้โจมตี", up: "bad", icon: "target", tone: "amber" },
 ];
 const DEFAULT_FILTERS = { range: "24h", server_id: "", severity: "", event_type: "" };
 
@@ -716,7 +744,67 @@ function Delta({ cur, prev, up, range }) {
   return <span><b className={cls}>{d > 0 ? "▲" : d < 0 ? "▼" : ""} {Math.abs(d).toFixed(1)}%</b> เทียบกับ {PREV_LABEL[range]}</span>;
 }
 
-function Dashboard() {
+/* ---------- Friendly helpers ---------- */
+function EmptyState({ icon, title, children, action }) {
+  return (
+    <div className="empty-state">
+      <div className="es-icon"><Icon name={icon} size={24} /></div>
+      <div className="es-title">{title}</div>
+      {children && <div className="es-body">{children}</div>}
+      {action && <div className="es-action">{action}</div>}
+    </div>
+  );
+}
+
+function installCommand(apiKey) {
+  return `curl -sSL ${location.origin}/install.sh | sudo MONITOR_API_KEY=${apiKey} bash -s -- ${location.origin}/api/logs`;
+}
+
+function CopyButton({ text, label = "คัดลอก", className = "btn ghost sm" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className={className} onClick={() => navigator.clipboard.writeText(text).then(() => {
+      setDone(true); setTimeout(() => setDone(false), 1500);
+    })}>{done ? "✓ คัดลอกแล้ว" : label}</button>
+  );
+}
+
+// Shown on the dashboard until the account has a server that has sent logs
+function Onboarding({ go }) {
+  const [servers, setServers] = useState(null);
+  useEffect(() => { api("/api/servers").then(setServers).catch(() => {}); }, []);
+  if (!servers) return null;
+  const hasLogs = servers.some((s) => s.log_count > 0);
+  const steps = [
+    { done: servers.length > 0, title: "เพิ่มเซิร์ฟเวอร์", text: "ตั้งชื่อเครื่องที่ต้องการเฝ้าดู แล้วรับ API key", action: () => go("servers"), btn: "ไปหน้าเซิร์ฟเวอร์" },
+    { done: servers.some((s) => s.status === "online") || hasLogs, title: "ติดตั้ง agent บนเครื่อง Linux", text: "คัดลอกคำสั่งติดตั้งจากหน้าเซิร์ฟเวอร์ แล้ววางในเครื่องนั้น", action: () => go("servers"), btn: "ดูคำสั่งติดตั้ง" },
+    { done: hasLogs, title: "รอข้อมูลชุดแรก", text: "เมื่อมีคน SSH เข้าเครื่อง ข้อมูลจะขึ้นที่นี่ภายในไม่กี่วินาที", action: () => go("guide"), btn: "อ่านคู่มือ" },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  if (doneCount === steps.length) return null;
+  return (
+    <section className="card onboarding" aria-label="เริ่มต้นใช้งาน">
+      <div className="ob-head">
+        <div>
+          <h3>👋 เริ่มต้นใช้งานใน 3 ขั้นตอน</h3>
+          <div className="sub">ทำครบแล้ว {doneCount}/{steps.length} ขั้น · กล่องนี้จะหายไปเองเมื่อเสร็จ</div>
+        </div>
+        <div className="ob-progress" aria-hidden="true"><span style={{ width: `${(doneCount / steps.length) * 100}%` }} /></div>
+      </div>
+      <ol className="ob-steps">
+        {steps.map((st, i) => (
+          <li key={i} className={st.done ? "done" : ""}>
+            <span className="ob-num">{st.done ? "✓" : i + 1}</span>
+            <div className="ob-text"><b>{st.title}</b><span>{st.text}</span></div>
+            {!st.done && <button type="button" className="btn secondary sm" onClick={st.action}>{st.btn}</button>}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function Dashboard({ go }) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -752,7 +840,7 @@ function Dashboard() {
       </div>
       <div className="dash">
         <aside className="card dash-filters" aria-label="ตัวกรอง">
-          <h3><span aria-hidden="true">⚲</span> ตัวกรอง</h3>
+          <h3><Icon name="filter" size={16} /> ตัวกรอง</h3>
           <div>
             <label htmlFor="f-range">ช่วงเวลา</label>
             <select id="f-range" className="input" value={filters.range} onChange={set("range")}>
@@ -785,10 +873,11 @@ function Dashboard() {
         </aside>
 
         <div className={"dash-main" + (loading && data ? " loading" : "")}>
+          <Onboarding go={go} />
           <div className="kpi-row">
             {KPIS.map((k) => (
-              <div key={k.key} className="card kpi">
-                <div className="k-label">{k.label}</div>
+              <div key={k.key} className={"card kpi tone-" + k.tone}>
+                <div className="k-label"><span className="k-ico"><Icon name={k.icon} size={16} /></span>{k.label}</div>
                 <div className="k-value">{data ? fmtNum(cur[k.key]) : "–"}</div>
                 <div className="k-delta">{data && <Delta cur={cur[k.key]} prev={prev && prev[k.key]} up={k.up} range={data.range} />}</div>
                 {data && <Sparkline values={series.map((p) => p[k.key])} />}
@@ -875,7 +964,7 @@ function Dashboard() {
             <section className="card viz-card span-12">
               <div className="viz-head"><div><h3>เหตุการณ์การโจมตี</h3><div className="sub">เรียงจากความเสี่ยงสูงสุด · เหตุการณ์ที่เปิดอยู่แสดงก่อน</div></div></div>
               {!data || !data.incidents.recent.length ? (
-                <div className="viz-empty">ไม่มีเหตุการณ์ในช่วงนี้</div>
+                <div className="viz-empty">✓ ไม่พบการโจมตีในช่วงนี้ ระบบยังเฝ้าดูอยู่ตลอด</div>
               ) : (
                 <div className="table-wrap">
                   <table>
@@ -907,7 +996,7 @@ function Dashboard() {
 }
 
 /* ---------- Servers ---------- */
-function Servers() {
+function Servers({ go }) {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -916,6 +1005,7 @@ function Servers() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(null);
+  const [showCmd, setShowCmd] = useState(null);
   const t = getToken();
   const isAdmin = !!t && (decodeToken(t) || {}).role === "admin";
 
@@ -930,11 +1020,12 @@ function Servers() {
     setError("");
     setCreating(true);
     try {
-      await api("/api/servers", {
+      const created = await api("/api/servers", {
         method: "POST",
         body: JSON.stringify({ name, hostname, ip_address: ip }),
       });
       setName(""); setHostname(""); setIp("");
+      if (created && created.id) setShowCmd(created.id);
       load();
     } catch (err) {
       setError(err.message);
@@ -964,11 +1055,12 @@ function Servers() {
     <div>
       <div className="page-title">
         <h1>เซิร์ฟเวอร์</h1>
-        <div className="sub">ลงทะเบียนเซิร์ฟเวอร์ SSH เพื่อรับ API key</div>
+        <div className="sub">เพิ่มเครื่องที่ต้องการเฝ้าดู แล้วนำคำสั่งติดตั้งไปวางบนเครื่องนั้น</div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h4 style={{ marginBottom: 12 }}>เพิ่มเซิร์ฟเวอร์</h4>
+        <h4 style={{ marginBottom: 4 }}>เพิ่มเซิร์ฟเวอร์</h4>
+        <div className="field-hint" style={{ marginBottom: 12 }}>ใส่แค่ชื่อก็พอ เช่น "เว็บหลัก" หรือ "db-01" ช่องอื่นใส่ไว้ช่วยจำเท่านั้น</div>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={createServer} className="toolbar">
           <input className="input" placeholder="ชื่อเซิร์ฟเวอร์" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -982,8 +1074,23 @@ function Servers() {
         {loading ? (
           <div className="empty">กำลังโหลด...</div>
         ) : servers.length === 0 ? (
-          <div className="empty">ยังไม่มีเซิร์ฟเวอร์</div>
+          <EmptyState icon="servers" title="ยังไม่มีเซิร์ฟเวอร์"
+            action={<button type="button" className="btn secondary sm" onClick={() => go("guide")}>📖 ดูวิธีเชื่อมเซิร์ฟเวอร์</button>}>
+            เริ่มจากกรอกชื่อเซิร์ฟเวอร์ในกล่องด้านบน ระบบจะสร้าง API key และคำสั่งติดตั้งให้ทันที
+          </EmptyState>
         ) : (
+          <>
+          {servers.filter((s) => s.id === showCmd).map((s) => (
+            <div key={s.id} className="install-box">
+              <div className="ib-head">
+                <b>คำสั่งติดตั้ง agent สำหรับ "{s.name}"</b>
+                <button type="button" className="btn ghost sm" onClick={() => setShowCmd(null)} aria-label="ปิด">✕</button>
+              </div>
+              <div className="field-hint">คัดลอกไปวางใน terminal ของเครื่อง Linux นั้น (ต้องมีสิทธิ์ sudo) สถานะจะเป็น "ออนไลน์" หลังมีการ SSH ครั้งแรก</div>
+              <pre className="cmd">{installCommand(s.api_key)}</pre>
+              <CopyButton text={installCommand(s.api_key)} label="คัดลอกคำสั่ง" className="btn primary sm" />
+            </div>
+          ))}
           <div className="table-wrap">
             <table>
               <thead>
@@ -1001,6 +1108,7 @@ function Servers() {
                     <td className="mono">{s.log_count}</td>
                     <td className="mono">{s.open_incidents}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
+                      <button className="btn ghost sm" onClick={() => setShowCmd(showCmd === s.id ? null : s.id)}>คำสั่งติดตั้ง</button>
                       <button className="btn ghost sm" onClick={() => copyKey(s.api_key, s.id)}>{copied === s.id ? "คัดลอกแล้ว!" : "คัดลอก key"}</button>
                       <button className="btn ghost sm" onClick={() => regenerate(s)}>สร้าง key ใหม่</button>
                       <button className="btn ghost sm danger" onClick={() => remove(s)}>ลบ</button>
@@ -1010,6 +1118,7 @@ function Servers() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>
@@ -1017,11 +1126,17 @@ function Servers() {
 }
 
 /* ---------- Logs ---------- */
-function Logs() {
+function Logs({ go }) {
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [eventType, setEventType] = useState("");
+  const [ipInput, setIpInput] = useState("");
   const [sourceIp, setSourceIp] = useState("");
+  // Wait for typing to pause before querying
+  useEffect(() => {
+    const t = setTimeout(() => setSourceIp(ipInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [ipInput]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
@@ -1041,21 +1156,29 @@ function Logs() {
     <div>
       <div className="page-title">
         <h1>Log</h1>
-        <div className="sub">ทั้งหมด {fmtNum(total)} เหตุการณ์</div>
+        <div className="sub">ทั้งหมด {fmtNum(total)} เหตุการณ์ · แสดงล่าสุด 200 รายการ</div>
       </div>
       <div className="toolbar">
         <select className="input" value={eventType} onChange={(e) => setEventType(e.target.value)}>
           <option value="">ทุกเหตุการณ์</option>
           {Object.entries(EVENT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input className="input" placeholder="กรองด้วย IP" value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} />
-        <button className="btn secondary sm" onClick={load}>รีเฟรช</button>
+        <input className="input" placeholder="ค้นหาด้วย IP เช่น 203.0.113.5" value={ipInput} onChange={(e) => setIpInput(e.target.value)} />
+        {(eventType || ipInput) && <button className="btn ghost sm" onClick={() => { setEventType(""); setIpInput(""); }}>ล้างตัวกรอง</button>}
+        <button className="btn secondary sm" onClick={load}><Icon name="refresh" size={14} /> รีเฟรช</button>
       </div>
       <div className="card">
         {loading ? (
           <div className="empty">กำลังโหลด...</div>
         ) : logs.length === 0 ? (
-          <div className="empty">ไม่มี log</div>
+          (eventType || sourceIp) ? (
+            <EmptyState icon="search" title="ไม่พบ log ที่ตรงกับตัวกรอง">ลองเปลี่ยนประเภทเหตุการณ์หรือ IP ที่ค้นหา</EmptyState>
+          ) : (
+            <EmptyState icon="logs" title="ยังไม่มี log เข้ามา"
+              action={<button type="button" className="btn secondary sm" onClick={() => go("servers")}>ไปติดตั้ง agent</button>}>
+              log จะขึ้นที่นี่เมื่อ agent บนเซิร์ฟเวอร์ส่งข้อมูลการ SSH เข้ามา
+            </EmptyState>
+          )
         ) : (
           <div className="table-wrap">
             <table>
@@ -1083,7 +1206,7 @@ function Logs() {
 }
 
 /* ---------- Incidents ---------- */
-function Incidents() {
+function Incidents({ go }) {
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [analyze, setAnalyze] = useState(null);
@@ -1104,13 +1227,16 @@ function Incidents() {
     <div>
       <div className="page-title">
         <h1>เหตุการณ์</h1>
-        <div className="sub">เหตุการณ์ด้านความปลอดภัยที่ตรวจพบ</div>
+        <div className="sub">การโจมตีที่ระบบตรวจพบ · กด "วิเคราะห์" เพื่อดูรายละเอียดของ IP และกด "แก้ไขแล้ว" เมื่อจัดการเสร็จ</div>
       </div>
       <div className="card">
         {loading ? (
           <div className="empty">กำลังโหลด...</div>
         ) : incidents.length === 0 ? (
-          <div className="empty">ไม่มีเหตุการณ์</div>
+          <EmptyState icon="shield" title="ยังไม่พบการโจมตี"
+            action={<button type="button" className="btn secondary sm" onClick={() => go("guide")}>📖 ระบบตรวจจับอะไรบ้าง?</button>}>
+            เมื่อระบบตรวจพบพฤติกรรมน่าสงสัย เช่น เดารหัสผ่านซ้ำ ๆ จะแสดงที่นี่และแจ้งเตือนคุณ
+          </EmptyState>
         ) : (
           <div className="table-wrap">
             <table>
@@ -1160,7 +1286,7 @@ function Users() {
         <h1>ผู้ใช้</h1>
         <div className="sub">บัญชีทั้งหมด</div>
       </div>
-      <div className="card">
+      <div className="card table-wrap">
         <table>
           <thead><tr><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>เซิร์ฟเวอร์</th></tr></thead>
           <tbody>
@@ -1800,14 +1926,152 @@ function AttackTest({ go }) {
   );
 }
 
+/* ---------- Guide ---------- */
+const ATTACK_HELP = {
+  brute_force: "IP เดียวเดารหัสผ่านซ้ำ ๆ หลายครั้งในเวลาสั้น ๆ",
+  brute_force_success: "ล็อกอินสำเร็จหลังจากผิดมาหลายครั้ง อาจเดารหัสผ่านถูกแล้ว ควรตรวจทันที",
+  password_spraying: "ลองรหัสผ่านยอดนิยมกับหลายบัญชี เพื่อหลบการล็อกบัญชี",
+  credential_stuffing: "ใช้ชื่อผู้ใช้/รหัสผ่านที่หลุดจากที่อื่นมาลองหลายคู่",
+  compromised_account: "บัญชีที่เคยถูกยึดกลับมาถูกใช้งานอีก",
+  username_enumeration: "ไล่เดาชื่อผู้ใช้ว่ามีบัญชีไหนอยู่ในเครื่องบ้าง",
+  ssh_scanning: "สแกนหาเครื่องที่เปิด SSH อยู่ มักเป็นจุดเริ่มของการโจมตี",
+  abnormal_burst: "จำนวนการล็อกอินพุ่งสูงผิดปกติเมื่อเทียบกับปกติ",
+  new_source_login: "ล็อกอินสำเร็จจาก IP หรือประเทศที่ไม่เคยเห็นมาก่อน",
+  cross_host: "IP เดียวกันโจมตีหลายเซิร์ฟเวอร์ของคุณพร้อมกัน",
+  post_compromise: "มีพฤติกรรมน่าสงสัยหลังจากบัญชีถูกเข้าถึงแล้ว",
+};
+
+const GUIDE_SECTIONS = [
+  { id: "start", label: "เริ่มต้นใช้งาน" },
+  { id: "menus", label: "แต่ละเมนูทำอะไร" },
+  { id: "risk", label: "ระดับความเสี่ยง" },
+  { id: "attacks", label: "ประเภทการโจมตี" },
+  { id: "alerts", label: "ตั้งค่าการแจ้งเตือน" },
+  { id: "faq", label: "คำถามที่พบบ่อย" },
+];
+
+function Guide({ go, isAdmin }) {
+  const sample = installCommand("<API_KEY>");
+  const jump = (id) => {
+    const el = document.getElementById("guide-" + id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return (
+    <div className="guide">
+      <div className="page-title guide-title">
+        <div>
+          <h1>คู่มือการใช้งาน</h1>
+          <div className="sub">อ่านจบใน 5 นาที · เริ่มเฝ้าดูเซิร์ฟเวอร์ได้ทันที</div>
+        </div>
+        <div className="guide-dl no-print">
+          <button type="button" className="btn primary sm" onClick={() => window.print()} title="เลือก 'บันทึกเป็น PDF' ในหน้าต่างพิมพ์"><Icon name="download" size={15} /> ดาวน์โหลดคู่มือ (PDF)</button>
+          <a className="btn secondary sm" href="/install.sh" download="install.sh"><Icon name="download" size={15} /> ดาวน์โหลดตัวติดตั้ง agent</a>
+        </div>
+      </div>
+
+      <nav className="guide-toc no-print" aria-label="สารบัญคู่มือ">
+        {GUIDE_SECTIONS.map((g, i) => (
+          <button type="button" key={g.id} onClick={() => jump(g.id)}><span>{i + 1}</span>{g.label}</button>
+        ))}
+      </nav>
+
+      <section id="guide-start" className="card guide-sec">
+        <h2>1. เริ่มต้นใช้งานใน 3 ขั้นตอน</h2>
+        <ol className="guide-steps">
+          <li>
+            <b>เพิ่มเซิร์ฟเวอร์</b>
+            <p>ไปที่เมนู <b>เซิร์ฟเวอร์</b> พิมพ์ชื่อเครื่อง (เช่น "เว็บหลัก") แล้วกด <b>เพิ่มเซิร์ฟเวอร์</b> ระบบจะสร้าง API key ให้อัตโนมัติ</p>
+            <button type="button" className="btn secondary sm no-print" onClick={() => go("servers")}>ไปหน้าเซิร์ฟเวอร์ →</button>
+          </li>
+          <li>
+            <b>ติดตั้ง agent บนเครื่อง Linux</b>
+            <p>กดปุ่ม <b>คำสั่งติดตั้ง</b> ในแถวของเซิร์ฟเวอร์ คัดลอกคำสั่ง แล้ววางใน terminal ของเครื่องนั้น (ต้องใช้ sudo) หน้าตาคำสั่งจะเป็นแบบนี้:</p>
+            <pre className="cmd">{sample}</pre>
+          </li>
+          <li>
+            <b>รอข้อมูลเข้า</b>
+            <p>เมื่อมีคน SSH เข้าเครื่อง สถานะจะเปลี่ยนเป็น <Chip kind="success">ออนไลน์</Chip> และข้อมูลจะขึ้นที่ <b>แดชบอร์ด</b> ภายในไม่กี่วินาที</p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="guide-menus" className="card guide-sec">
+        <h2>2. แต่ละเมนูทำอะไร</h2>
+        <div className="guide-grid">
+          {PAGES.filter((p) => isAdmin || !["users", "simulate"].includes(p.key)).map((p) => (
+            <button type="button" key={p.key} className="guide-menu" onClick={() => go(p.key)}>
+              <span className="gm-icon"><Icon name={p.icon} /></span>
+              <span><b>{p.label}</b><span>{p.hint}</span></span>
+            </button>
+          ))}
+          <button type="button" className="guide-menu" onClick={() => go("profile")}>
+            <span className="gm-icon"><Icon name="profile" /></span>
+            <span><b>โปรไฟล์</b><span>เปลี่ยนรหัสผ่าน อีเมล รูปโปรไฟล์ และเชื่อม LINE</span></span>
+          </button>
+        </div>
+      </section>
+
+      <section id="guide-risk" className="card guide-sec">
+        <h2>3. ระดับความเสี่ยง</h2>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>ระดับ</th><th>ความหมาย</th><th>ควรทำอะไร</th></tr></thead>
+            <tbody>
+              <tr><td>{riskChip("CRITICAL")}</td><td>มีโอกาสสูงที่บัญชีถูกเจาะแล้ว</td><td>ตรวจเครื่องทันที เปลี่ยนรหัสผ่าน และบล็อก IP</td></tr>
+              <tr><td>{riskChip("HIGH")}</td><td>กำลังถูกโจมตีอย่างจริงจัง</td><td>บล็อก IP ต้นทาง ตรวจสอบบัญชีที่ถูกเดา</td></tr>
+              <tr><td>{riskChip("MEDIUM")}</td><td>พฤติกรรมน่าสงสัย</td><td>เฝ้าดูต่อ หากเกิดซ้ำให้บล็อก</td></tr>
+              <tr><td>{riskChip("LOW")}</td><td>เรื่องเล็ก หรือเป็นการสแกนทั่วไป</td><td>ไม่ต้องทำอะไรเร่งด่วน</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="field-hint" style={{ marginTop: 10 }}>เมื่อจัดการเสร็จ ให้กด <b>แก้ไขแล้ว</b> ในหน้าเหตุการณ์ เพื่อให้รายการที่ยังเปิดอยู่เหลือเฉพาะเรื่องที่ต้องดู</p>
+      </section>
+
+      <section id="guide-attacks" className="card guide-sec">
+        <h2>4. ประเภทการโจมตีที่ระบบตรวจจับ</h2>
+        <dl className="guide-dl-list">
+          {Object.entries(ATTACK_LABEL).map(([k, v]) => (
+            <div key={k}><dt>{v}</dt><dd>{ATTACK_HELP[k] || ""}</dd></div>
+          ))}
+        </dl>
+      </section>
+
+      <section id="guide-alerts" className="card guide-sec">
+        <h2>5. ตั้งค่าการแจ้งเตือน</h2>
+        <p>เปิดหน้า <b>โปรไฟล์</b> (กดชื่อของคุณที่มุมขวาบน) แล้วเชื่อมบัญชี LINE ของคุณ เมื่อระบบตรวจพบการโจมตี จะส่งข้อความแจ้งคุณทันที</p>
+        <button type="button" className="btn secondary sm no-print" onClick={() => go("profile")}>ไปหน้าโปรไฟล์ →</button>
+      </section>
+
+      <section id="guide-faq" className="card guide-sec">
+        <h2>6. คำถามที่พบบ่อย</h2>
+        <details><summary>เซิร์ฟเวอร์ขึ้น "ออฟไลน์" ตลอด</summary>
+          <p>สถานะจะเป็นออนไลน์หลังมีการ SSH ครั้งแรก ลอง SSH เข้าเครื่องนั้นหนึ่งครั้ง ถ้ายังไม่ขึ้น ให้รัน <code>sudo systemctl status ssh-monitor</code> บนเครื่องเพื่อดูว่า agent ทำงานอยู่ไหม</p>
+        </details>
+        <details><summary>API key หลุด ต้องทำอย่างไร</summary>
+          <p>กด <b>สร้าง key ใหม่</b> ในหน้าเซิร์ฟเวอร์ key เก่าจะใช้ไม่ได้ทันที จากนั้นแก้ <code>MONITOR_API_KEY</code> ใน <code>/opt/ssh-monitor/.env</code> แล้วรัน <code>sudo systemctl restart ssh-monitor</code></p>
+        </details>
+        <details><summary>อยากลองระบบโดยไม่ต้องมีเซิร์ฟเวอร์จริง</summary>
+          <p>{isAdmin ? <>ใช้เมนู <b>ทดสอบการโจมตี</b> เพื่อจำลองการโจมตีแบบต่าง ๆ แล้วดูผลบนแดชบอร์ด</> : <>ขอให้ผู้ดูแลระบบใช้เมนู "ทดสอบการโจมตี" เพื่อจำลองข้อมูลให้</>}</p>
+        </details>
+        <details><summary>ถอนการติดตั้ง agent</summary>
+          <p>รัน <code>sudo systemctl disable --now ssh-monitor</code> แล้วลบโฟลเดอร์ <code>/opt/ssh-monitor</code> จากนั้นลบเซิร์ฟเวอร์ออกจากหน้าเซิร์ฟเวอร์</p>
+        </details>
+        <details><summary>คนอื่นเห็นเซิร์ฟเวอร์ของฉันไหม</summary>
+          <p>ไม่เห็น แต่ละบัญชีเห็นเฉพาะเซิร์ฟเวอร์ของตัวเอง มีเพียงผู้ดูแลระบบที่เห็นทั้งหมด</p>
+        </details>
+      </section>
+    </div>
+  );
+}
+
 /* ---------- App ---------- */
 const PAGES = [
-  { key: "dashboard", label: "แดชบอร์ด", icon: "▦" },
-  { key: "servers", label: "เซิร์ฟเวอร์", icon: "▣" },
-  { key: "logs", label: "Log", icon: "≡" },
-  { key: "incidents", label: "เหตุการณ์", icon: "⚠" },
-  { key: "simulate", label: "ทดสอบการโจมตี", icon: "⚡" },
-  { key: "users", label: "ผู้ใช้", icon: "◉" },
+  { key: "dashboard", label: "แดชบอร์ด", icon: "dashboard", hint: "ภาพรวมความปลอดภัยของทุกเซิร์ฟเวอร์" },
+  { key: "servers", label: "เซิร์ฟเวอร์", icon: "servers", hint: "เพิ่มเครื่อง รับ API key และคำสั่งติดตั้ง agent" },
+  { key: "logs", label: "Log", icon: "logs", hint: "ประวัติการล็อกอิน SSH ทุกครั้ง" },
+  { key: "incidents", label: "เหตุการณ์", icon: "incidents", hint: "การโจมตีที่ระบบตรวจพบ รอคุณตรวจสอบ" },
+  { key: "simulate", label: "ทดสอบการโจมตี", icon: "simulate", hint: "จำลองการโจมตีเพื่อลองระบบ (admin)" },
+  { key: "users", label: "ผู้ใช้", icon: "users", hint: "บัญชีทั้งหมดในระบบ (admin)" },
 ];
 
 function App() {
@@ -1862,27 +2126,40 @@ function App() {
         </div>
         <div className="nav-label">เมนู</div>
         {pages.map((p) => (
-          <div key={p.key} className={"nav-item" + (page === p.key ? " active" : "")} onClick={() => setPage(p.key)}>
-            <span>{p.icon}</span> {p.label}
-          </div>
+          <button type="button" key={p.key} className={"nav-item" + (page === p.key ? " active" : "")} onClick={() => setPage(p.key)}
+            title={p.hint} aria-current={page === p.key ? "page" : undefined}>
+            <span className="nav-ico"><Icon name={p.icon} /></span> {p.label}
+          </button>
         ))}
-        <div className="nav-item" onClick={() => { window.location.href = "/get-key"; }}><span>⚿</span> รับ API Key</div>
+        <a className="nav-item" href="/get-key" title="สร้าง API key และคำสั่งติดตั้งแบบทีละขั้น"><span className="nav-ico"><Icon name="key" /></span> รับ API Key</a>
         <div className="spacer" style={{ flex: 1 }} />
         <div className="sidebar-foot">
           <ThemeToggle />
-          <div className="nav-item" onClick={handleLogout}><span>⏻</span> ออกจากระบบ</div>
+          <button type="button" className="nav-item" onClick={() => { if (confirm("ออกจากระบบตอนนี้?")) handleLogout(); }}><span className="nav-ico"><Icon name="logout" /></span> ออกจากระบบ</button>
         </div>
       </aside>
       <main className="main">
-        <button type="button" className={"user-chip" + (page === "profile" ? " active" : "")} onClick={() => setPage("profile")}
-          title="โปรไฟล์ของคุณ" aria-label={`เปิดโปรไฟล์ของ ${username}`}>
-          <span className="who"><b>{username}</b><span>{isAdmin ? "ผู้ดูแลระบบ" : "ผู้ใช้"} · โปรไฟล์</span></span>
-          <Avatar name={username} src={me && me.avatar} />
-        </button>
-        {page === "dashboard" && <Dashboard />}
-        {page === "servers" && <Servers />}
-        {page === "logs" && <Logs />}
-        {page === "incidents" && <Incidents />}
+        <header className="topbar">
+          <div className="crumb">
+            <span className="crumb-title">สวัสดี {username} 👋</span>
+            <span className="crumb-hint">ไม่แน่ใจว่าต้องเริ่มตรงไหน? เปิด "คู่มือการใช้งาน" ได้ตลอด</span>
+          </div>
+          <div className="topbar-actions">
+            <button type="button" className={"guide-btn" + (page === "guide" ? " active" : "")} onClick={() => setPage("guide")} title="วิธีใช้งานทีละขั้น">
+              <Icon name="book" size={16} /> คู่มือการใช้งาน
+            </button>
+            <button type="button" className={"user-chip" + (page === "profile" ? " active" : "")} onClick={() => setPage("profile")}
+              title="โปรไฟล์ของคุณ" aria-label={`เปิดโปรไฟล์ของ ${username}`}>
+              <span className="who"><b>{username}</b><span>{isAdmin ? "ผู้ดูแลระบบ" : "ผู้ใช้"} · โปรไฟล์</span></span>
+              <Avatar name={username} src={me && me.avatar} />
+            </button>
+          </div>
+        </header>
+        {page === "dashboard" && <Dashboard go={setPage} />}
+        {page === "servers" && <Servers go={setPage} />}
+        {page === "logs" && <Logs go={setPage} />}
+        {page === "incidents" && <Incidents go={setPage} />}
+        {page === "guide" && <Guide go={setPage} isAdmin={isAdmin} />}
         {page === "simulate" && isAdmin && <AttackTest go={setPage} />}
         {page === "users" && isAdmin && <Users />}
         {page === "profile" && <Profile onToken={refreshAuth} onDeleted={handleLogout} flash={FLASH} onProfile={setMe} />}
